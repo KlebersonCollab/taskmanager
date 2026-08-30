@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import importlib.util
 import logging
+import sys
+from pathlib import Path
 
 import fakeredis.aioredis
 import redis.asyncio as redis
@@ -48,9 +51,27 @@ async def get_redis_client(redis_url: str | None = None, force_in_memory: bool =
 
 
 def auto_discover_tasks(modules: list[str]) -> None:
-    """Imports user modules to register decorated @task functions."""
+    """Imports user modules or file paths to register decorated @task functions."""
+    cwd = str(Path.cwd().resolve())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
     for mod in modules:
         try:
+            # If path to a python file was passed directly (e.g. 'example_tasks.py')
+            if mod.endswith(".py") or "/" in mod or "\\" in mod:
+                path = Path(mod).resolve()
+                if path.exists():
+                    mod_name = path.stem
+                    spec = importlib.util.spec_from_file_location(mod_name, str(path))
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        sys.modules[mod_name] = module
+                        spec.loader.exec_module(module)
+                        logger.info(f"Loaded tasks from file: {mod}")
+                        continue
+
+            # Standard python module import (e.g. 'example_tasks')
             importlib.import_module(mod)
             logger.info(f"Loaded tasks from module: {mod}")
         except Exception as err:
@@ -114,8 +135,16 @@ async def run_dev(
     broker = RedisBroker(client, prefix=settings.redis_prefix)
     registry.set_broker(broker)
 
+    # In dev mode, auto-listen to all registered queues if default was selected
+    active_queues = list(queues)
+    if queues == ["default"]:
+        for t_name in registry.list_tasks():
+            t_obj = registry.get(t_name)
+            if t_obj and t_obj.queue not in active_queues:
+                active_queues.append(t_obj.queue)
+
     worker = Worker(
-        queues=queues,
+        queues=active_queues,
         concurrency=concurrency,
         name="dev-worker",
         broker=broker,
