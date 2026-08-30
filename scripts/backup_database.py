@@ -21,6 +21,10 @@ import time
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="Script de backup de banco de dados")
     parser.add_argument("--database", default="app_db", help="Nome do banco de dados")
     parser.add_argument("--compress", action="store_true", help="Compactar arquivo de backup (.gz)")
