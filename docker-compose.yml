@@ -1,0 +1,83 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Redis Broker & Result Store
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: taskmanager-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # 2. TaskManager Dashboard & FastAPI Server
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build: .
+    container_name: taskmanager-dashboard
+    restart: unless-stopped
+    command: taskmanager server --host 0.0.0.0 --port 8000 --app-module example_tasks
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PREFIX=tm
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # 3. Worker Especializado em E-mails (Alta Concorrência)
+  # ---------------------------------------------------------------------------
+  worker-emails:
+    build: .
+    container_name: taskmanager-worker-emails
+    restart: unless-stopped
+    command: taskmanager worker -n worker-emails -q emails -c 10 -m example_tasks
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PREFIX=tm
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # 4. Worker de Relatórios & Fila Geral (Proteção de Memória / Backpressure)
+  # ---------------------------------------------------------------------------
+  worker-reports:
+    build: .
+    container_name: taskmanager-worker-reports
+    restart: unless-stopped
+    command: taskmanager worker -n worker-reports -q reports,default,payments -c 4 --max-memory-mb 1024 -m example_tasks
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PREFIX=tm
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # 5. Dynamic Cron Scheduler Daemon
+  # ---------------------------------------------------------------------------
+  scheduler:
+    build: .
+    container_name: taskmanager-scheduler
+    restart: unless-stopped
+    command: taskmanager scheduler -m example_tasks
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PREFIX=tm
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+    driver: local

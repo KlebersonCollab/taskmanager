@@ -104,6 +104,32 @@ taskmanager server --host 0.0.0.0 --port 8000 --app-module my_tasks
 
 ---
 
+## 🐳 Running with Docker & Docker Compose
+
+To launch the complete distributed stack (**Redis + Dashboard + Specialized Workers + Scheduler**) with one command:
+
+```bash
+docker compose up --build -d
+```
+
+Check running services:
+```bash
+docker compose ps
+```
+
+* **Dashboard**: [http://localhost:8000](http://localhost:8000)
+* **Redis**: `localhost:6379`
+* **Worker Emails**: Dedicated worker for `emails` queue (`concurrency=10`).
+* **Worker Reports**: Dedicated worker for `reports,default,payments` with 1GB RAM backpressure ceiling (`concurrency=4`).
+* **Scheduler**: Distributed cron daemon.
+
+Stop the stack:
+```bash
+docker compose down
+```
+
+---
+
 ## 📊 Management Dashboard Overview
 
 The dashboard is accessible directly at `http://localhost:8000/`:
