@@ -12,14 +12,13 @@ from __future__ import annotations
 
 import asyncio
 
-import redis.asyncio as redis
-
 from example_tasks import (
     cleanup_temp_files,
     generate_sales_report,
     send_welcome_email,
     sync_payment_gateway,
 )
+from taskmanager.cli import get_redis_client
 from taskmanager.config import settings
 from taskmanager.core.broker import RedisBroker
 from taskmanager.core.task import registry
@@ -29,7 +28,7 @@ async def main() -> None:
     print("🚀 Conectando ao Broker do TaskManager...")
 
     # 1. Inicializa o broker conectado ao Redis
-    client = redis.from_url(settings.redis_url, decode_responses=True)
+    client = await get_redis_client(settings.redis_url)
     broker = RedisBroker(client, prefix=settings.redis_prefix)
     registry.set_broker(broker)
 
