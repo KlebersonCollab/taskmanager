@@ -13,7 +13,7 @@
 | [x] | TASK-01 | feat | Configure pyproject.toml package setup and core dependencies | `pyproject.toml`, `taskmanager/__init__.py`, `taskmanager/config.py`, `uv.lock` | None | pass: venv ready, v0.1.0 import ok |
 | [x] | TASK-02 | test | Scaffold pytest fixtures and in-memory Redis mock harness | `tests/conftest.py` | TASK-01 | pass: fakeredis fixture verified with pytest-asyncio |
 | [x] | TASK-03 | feat | Implement Core Job model, Status enum, and Redis Broker layer | `taskmanager/core/job.py`, `taskmanager/core/broker.py` | TASK-02 | pass: Job schema, Status enum, and RedisBroker implemented |
-| [x] | TASK-04 | feat | Implement `@task` decorator API, delayed queuing, and unit tests | `taskmanager/core/task.py`, `tests/test_core.py` | TASK-03 | pass: 4 tests passed in 0.91s |
+| [x] | TASK-04 | feat | Implement `@task` decorator API, delayed queuing, and unit tests | `taskmanager/core/task.py`, `taskmanager/core/builtin_tasks.py`, `tests/test_core.py` | TASK-03 | pass: 5 tests passed in 0.91s |
 | [x] | TASK-05 | feat | Implement Worker Runtime with concurrency, retry backoff, DLQ, and heartbeats | `taskmanager/worker/worker.py`, `taskmanager/worker/heartbeat.py`, `tests/test_worker.py` | TASK-04 | pass: 3 worker tests passed in 0.50s |
 | [x] | TASK-06 | feat | Implement Cron & Scheduled task engine with Redis distributed lock | `taskmanager/scheduler/cron.py`, `taskmanager/scheduler/scheduler.py`, `tests/test_scheduler.py` | TASK-05 | pass: 3 scheduler tests passed in 0.28s |
 | [x] | TASK-07 | feat | Expose FastAPI REST endpoints and WebSocket event broadcaster | `taskmanager/api/app.py`, `taskmanager/api/events.py`, `tests/test_api.py` | TASK-06 | pass: 4 API tests passed in 0.39s (0 warnings) |

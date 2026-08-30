@@ -250,19 +250,28 @@
         <div class="modal-body">
           <form id="form-enqueue" onsubmit="handleEnqueueSubmit(event)">
             <div class="form-group">
-              <label class="form-label">Nome da Tarefa</label>
-              <input type="text" class="form-input" id="enq-task-name" placeholder="ex: send_email" required />
+              <label class="form-label">Selecionar Tarefa Registrada</label>
+              <select class="form-select" id="enq-task-select" onchange="handleTaskSelectChange('enq')">
+                <option value="">-- Carregando tarefas... --</option>
+              </select>
+            </div>
+            <div class="form-group" id="group-enq-custom-task" style="display: none;">
+              <label class="form-label">Nome da Tarefa Customizada</label>
+              <input type="text" class="form-input" id="enq-task-name" placeholder="ex: meupacote.minha_tarefa" />
             </div>
             <div class="form-group">
               <label class="form-label">Fila (Queue)</label>
               <input type="text" class="form-input" id="enq-queue" value="default" required />
             </div>
             <div class="form-group">
-              <label class="form-label">Argumentos JSON (Lista / Dicionário)</label>
-              <textarea class="form-textarea" id="enq-args" placeholder='{"args": ["teste@exemplo.com"], "kwargs": {"subject": "Olá"}}'></textarea>
+              <label class="form-label">Argumentos JSON / Payload da Tarefa</label>
+              <textarea class="form-textarea" id="enq-args" placeholder='{"args": ["param1"], "kwargs": {"key": "value"}}'></textarea>
+              <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 4px;" id="enq-args-help">
+                Dica: Para system.run_command, use {"command": "python script.py"}
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label">Delay (Segundos, opcional)</label>
+              <label class="form-label">Delay (Segundos de espera, opcional)</label>
               <input type="number" class="form-input" id="enq-delay" placeholder="0" min="0" />
             </div>
             <div class="modal-footer">
@@ -285,11 +294,21 @@
           <form id="form-schedule" onsubmit="handleScheduleSubmit(event)">
             <div class="form-group">
               <label class="form-label">Nome da Rotina</label>
-              <input type="text" class="form-input" id="sched-name" placeholder="ex: Relatório Diário" required />
+              <input type="text" class="form-input" id="sched-name" placeholder="ex: Backup Diário" required />
             </div>
             <div class="form-group">
-              <label class="form-label">Tarefa (Task Name)</label>
-              <input type="text" class="form-input" id="sched-task" placeholder="ex: generate_report" required />
+              <label class="form-label">Selecionar Tarefa Registrada</label>
+              <select class="form-select" id="sched-task-select" onchange="handleTaskSelectChange('sched')">
+                <option value="">-- Carregando tarefas... --</option>
+              </select>
+            </div>
+            <div class="form-group" id="group-sched-custom-task" style="display: none;">
+              <label class="form-label">Nome da Tarefa Customizada</label>
+              <input type="text" class="form-input" id="sched-task" placeholder="ex: meupacote.minha_tarefa" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Argumentos JSON (Opcional)</label>
+              <textarea class="form-textarea" id="sched-args" placeholder='{"args": [], "kwargs": {"command": "python backup.py"}}'></textarea>
             </div>
             <div class="form-group">
               <label class="form-label">Tipo de Agendamento</label>

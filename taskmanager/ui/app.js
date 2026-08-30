@@ -255,18 +255,21 @@ async function fetchWorkers() {
   }
 }
 
+let cachedTasks = [];
+
 async function fetchTasks() {
   try {
     const res = await fetch(`${API_BASE}/api/tasks`);
-    const tasks = await res.json();
-    const tbody = document.getElementById("tasks-table");
+    cachedTasks = await res.json();
+    populateTaskDropdowns(cachedTasks);
 
-    if (tasks.length === 0) {
+    const tbody = document.getElementById("tasks-table");
+    if (cachedTasks.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--ink-subtle);">Nenhuma tarefa registrada no TaskRegistry.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = tasks.map(t => `
+    tbody.innerHTML = cachedTasks.map(t => `
       <tr>
         <td><strong>${escapeHtml(t.name)}</strong></td>
         <td><code>${escapeHtml(t.queue)}</code></td>
@@ -281,6 +284,67 @@ async function fetchTasks() {
     `).join("");
   } catch (err) {
     console.error("Failed to fetch tasks", err);
+  }
+}
+
+function populateTaskDropdowns(tasks) {
+  const enqSelect = document.getElementById("enq-task-select");
+  const schedSelect = document.getElementById("sched-task-select");
+  if (!enqSelect || !schedSelect) return;
+
+  const currentEnq = enqSelect.value;
+  const currentSched = schedSelect.value;
+
+  const optionsHtml = `
+    <optgroup label="⚡ Executores de Script Embutidos">
+      <option value="system.run_command">system.run_command (Executar Script / Comando Shell)</option>
+      <option value="system.run_script">system.run_script (Executar Script Python .py)</option>
+    </optgroup>
+    <optgroup label="📦 Tarefas Python Registradas (@task)">
+      ${tasks.filter(t => !t.name.startsWith("system.")).map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (fila: ${escapeHtml(t.queue)})</option>`).join("")}
+    </optgroup>
+    <optgroup label="⚙️ Customizado">
+      <option value="__custom__">Outra tarefa / Nome customizado...</option>
+    </optgroup>
+  `;
+
+  enqSelect.innerHTML = optionsHtml;
+  schedSelect.innerHTML = optionsHtml;
+
+  if (currentEnq) enqSelect.value = currentEnq;
+  if (currentSched) schedSelect.value = currentSched;
+}
+
+function handleTaskSelectChange(prefix) {
+  const select = document.getElementById(`${prefix}-task-select`);
+  const customGroup = document.getElementById(`group-${prefix}-custom-task`);
+  const queueInput = document.getElementById(`${prefix}-queue`);
+  const argsTextarea = document.getElementById(`${prefix}-args`);
+  const helpDiv = document.getElementById(`${prefix}-args-help`);
+  const taskName = select.value;
+
+  if (taskName === "__custom__") {
+    customGroup.style.display = "block";
+  } else {
+    customGroup.style.display = "none";
+  }
+
+  // Pre-fill smart defaults
+  if (taskName === "system.run_command") {
+    if (argsTextarea) argsTextarea.value = '{\n  "kwargs": {\n    "command": "python scripts/meu_script.py"\n  }\n}';
+    if (helpDiv) helpDiv.innerText = "💡 Informe o comando shell ou script a ser executado pelo worker.";
+  } else if (taskName === "system.run_script") {
+    if (argsTextarea) argsTextarea.value = '{\n  "kwargs": {\n    "script_path": "meu_script.py",\n    "args": []\n  }\n}';
+    if (helpDiv) helpDiv.innerText = "💡 Informe o caminho do script Python relativo à raiz do projeto.";
+  } else {
+    const taskObj = cachedTasks.find(t => t.name === taskName);
+    if (taskObj && queueInput) {
+      queueInput.value = taskObj.queue || "default";
+    }
+    if (argsTextarea && !argsTextarea.value.trim()) {
+      argsTextarea.value = '{\n  "args": [],\n  "kwargs": {}\n}';
+    }
+    if (helpDiv) helpDiv.innerText = "💡 Passe argumentos posicionais ('args') ou nomeados ('kwargs').";
   }
 }
 
@@ -432,9 +496,13 @@ async function showJobDetails(jobId) {
 }
 
 function quickEnqueueTask(taskName, queue) {
-  document.getElementById("enq-task-name").value = taskName;
+  openEnqueueModal();
+  const select = document.getElementById("enq-task-select");
+  if (select) {
+    select.value = taskName;
+    handleTaskSelectChange("enq");
+  }
   document.getElementById("enq-queue").value = queue;
-  openModal("modal-enqueue");
 }
 
 // --- Modals & Forms ---
@@ -447,12 +515,16 @@ function closeModal(id) {
   document.getElementById(id).classList.remove("show");
 }
 
-function openEnqueueModal() {
+async function openEnqueueModal() {
+  if (cachedTasks.length === 0) await fetchTasks();
   openModal("modal-enqueue");
+  handleTaskSelectChange("enq");
 }
 
-function openScheduleModal() {
+async function openScheduleModal() {
+  if (cachedTasks.length === 0) await fetchTasks();
   openModal("modal-schedule");
+  handleTaskSelectChange("sched");
 }
 
 function toggleScheduleTypeFields() {
@@ -463,7 +535,15 @@ function toggleScheduleTypeFields() {
 
 async function handleEnqueueSubmit(e) {
   e.preventDefault();
-  const taskName = document.getElementById("enq-task-name").value.trim();
+  const selectVal = document.getElementById("enq-task-select").value;
+  const customVal = document.getElementById("enq-task-name").value.trim();
+  const taskName = selectVal === "__custom__" ? customVal : selectVal;
+
+  if (!taskName) {
+    alert("Por favor, selecione ou informe o nome da tarefa.");
+    return;
+  }
+
   const queue = document.getElementById("enq-queue").value.trim() || "default";
   const delay = parseFloat(document.getElementById("enq-delay").value) || 0;
   const argsRaw = document.getElementById("enq-args").value.trim();
@@ -475,7 +555,7 @@ async function handleEnqueueSubmit(e) {
       if (Array.isArray(obj)) parsedArgs.args = obj;
       else if (typeof obj === "object") {
         parsedArgs.args = obj.args || [];
-        parsedArgs.kwargs = obj.kwargs || obj;
+        parsedArgs.kwargs = obj.kwargs || (obj.args === undefined ? obj : {});
       }
     } catch (err) {
       alert("JSON inválido no campo de argumentos.");
@@ -499,6 +579,7 @@ async function handleEnqueueSubmit(e) {
       closeModal("modal-enqueue");
       document.getElementById("form-enqueue").reset();
       fetchOverview();
+      alert(`Tarefa '${taskName}' enfileirada com sucesso!`);
     } else {
       const errData = await res.json();
       alert("Erro ao enfileirar: " + (errData.detail || "Erro desconhecido"));
@@ -511,11 +592,35 @@ async function handleEnqueueSubmit(e) {
 async function handleScheduleSubmit(e) {
   e.preventDefault();
   const name = document.getElementById("sched-name").value.trim();
-  const taskName = document.getElementById("sched-task").value.trim();
+  const selectVal = document.getElementById("sched-task-select").value;
+  const customVal = document.getElementById("sched-task").value.trim();
+  const taskName = selectVal === "__custom__" ? customVal : selectVal;
+
+  if (!taskName) {
+    alert("Por favor, selecione ou informe o nome da tarefa.");
+    return;
+  }
+
   const scheduleType = document.getElementById("sched-type").value;
   const queue = document.getElementById("sched-queue").value.trim() || "default";
   const cronExpr = document.getElementById("sched-cron").value.trim();
   const intervalSec = parseFloat(document.getElementById("sched-interval").value) || 0;
+  const argsRaw = document.getElementById("sched-args").value.trim();
+
+  let parsedArgs = { args: [], kwargs: {} };
+  if (argsRaw) {
+    try {
+      const obj = JSON.parse(argsRaw);
+      if (Array.isArray(obj)) parsedArgs.args = obj;
+      else if (typeof obj === "object") {
+        parsedArgs.args = obj.args || [];
+        parsedArgs.kwargs = obj.kwargs || (obj.args === undefined ? obj : {});
+      }
+    } catch (err) {
+      alert("JSON inválido no campo de argumentos.");
+      return;
+    }
+  }
 
   const payload = {
     name,
@@ -524,8 +629,8 @@ async function handleScheduleSubmit(e) {
     schedule_type: scheduleType,
     cron_expression: scheduleType === "cron" ? cronExpr : null,
     interval_seconds: scheduleType === "interval" ? intervalSec : null,
-    args: [],
-    kwargs: {},
+    args: parsedArgs.args,
+    kwargs: parsedArgs.kwargs,
     enabled: true,
   };
 
@@ -541,6 +646,7 @@ async function handleScheduleSubmit(e) {
       document.getElementById("form-schedule").reset();
       fetchSchedules();
       fetchOverview();
+      alert(`Cron '${name}' cadastrado com sucesso!`);
     } else {
       const errData = await res.json();
       alert("Erro ao criar agendamento: " + (errData.detail || "Erro desconhecido"));

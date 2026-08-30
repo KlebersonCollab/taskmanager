@@ -95,3 +95,12 @@ async def test_task_decorator_and_delay(broker):
     fetched = await broker.fetch_next_job(["math_queue"], worker_id="worker-math")
     assert fetched is not None
     assert fetched.id == job.id
+
+
+@pytest.mark.asyncio
+async def test_builtin_system_run_command(broker):
+    from taskmanager.core.builtin_tasks import run_command
+
+    result = await run_command("python -c \"print('Hello from script runner!')\"")
+    assert result["exit_code"] == 0
+    assert result["stdout"] == "Hello from script runner!"
