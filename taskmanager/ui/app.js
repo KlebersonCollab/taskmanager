@@ -6,6 +6,49 @@ const API_BASE = window.location.origin;
 let ws = null;
 let currentTab = "overview";
 
+// --- Modern Linear Dark Toast Notification System ---
+const toast = {
+  show(title, msg = "", type = "info", duration = 4000) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+
+    const icons = {
+      success: "✅",
+      error: "❌",
+      warning: "⚠️",
+      info: "ℹ️",
+    };
+
+    const toastElem = document.createElement("div");
+    toastElem.className = `toast toast-${type}`;
+    toastElem.innerHTML = `
+      <span class="toast-icon">${icons[type] || icons.info}</span>
+      <div class="toast-body">
+        <div class="toast-title">${escapeHtml(title)}</div>
+        ${msg ? `<div class="toast-msg">${escapeHtml(msg)}</div>` : ""}
+      </div>
+      <button class="toast-close" onclick="this.closest('.toast').remove()">&times;</button>
+    `;
+
+    container.appendChild(toastElem);
+
+    requestAnimationFrame(() => {
+      toastElem.classList.add("show");
+    });
+
+    if (duration > 0) {
+      setTimeout(() => {
+        toastElem.classList.remove("show");
+        setTimeout(() => toastElem.remove(), 350);
+      }, duration);
+    }
+  },
+  success(title, msg) { this.show(title, msg, "success", 4000); },
+  error(title, msg) { this.show(title, msg, "error", 5500); },
+  warning(title, msg) { this.show(title, msg, "warning", 4500); },
+  info(title, msg) { this.show(title, msg, "info", 4000); },
+};
+
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   setupTabs();
@@ -314,12 +357,19 @@ async function handleSpawnWorkerSubmit(e) {
       fetchWorkers();
       fetchOverview();
       logEvent("WORKER", `Novo worker '${name || 'dinâmico'}' iniciado com sucesso.`);
+      toast.success("Worker iniciado", `Worker '${name || 'dinâmico'}' está ativo e escutando [${queues.join(', ')}].`);
     } else {
-      const err = await res.json();
-      alert("Erro ao iniciar worker: " + (err.detail || "Erro desconhecido"));
+      let errMsg = "Erro desconhecido";
+      try {
+        const errData = await res.json();
+        errMsg = errData.detail || errData.message || JSON.stringify(errData);
+      } catch {
+        errMsg = await res.text();
+      }
+      toast.error("Erro ao iniciar worker", errMsg);
     }
   } catch (err) {
-    alert("Erro na requisição: " + err.message);
+    toast.error("Falha na requisição", err.message);
   }
 }
 
@@ -329,9 +379,10 @@ async function pauseWorker(workerId) {
     if (res.ok) {
       fetchWorkers();
       logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} pausado.`);
+      toast.warning("Worker pausado", `O worker ${workerId.substring(0, 8)} pausou o consumo de tarefas.`);
     }
   } catch (err) {
-    console.error("Failed to pause worker", err);
+    toast.error("Erro ao pausar worker", err.message);
   }
 }
 
@@ -341,22 +392,23 @@ async function resumeWorker(workerId) {
     if (res.ok) {
       fetchWorkers();
       logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} retomado.`);
+      toast.success("Worker retomado", `O worker ${workerId.substring(0, 8)} voltou a processar tarefas.`);
     }
   } catch (err) {
-    console.error("Failed to resume worker", err);
+    toast.error("Erro ao retomar worker", err.message);
   }
 }
 
 async function stopWorker(workerId) {
-  if (!confirm(`Deseja realmente parar o worker ${workerId.substring(0, 8)}?`)) return;
   try {
     const res = await fetch(`${API_BASE}/api/workers/${workerId}/stop`, { method: "POST" });
     if (res.ok) {
       fetchWorkers();
       logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} encerrado.`);
+      toast.info("Worker encerrado", `O worker ${workerId.substring(0, 8)} foi finalizado com sucesso.`);
     }
   } catch (err) {
-    console.error("Failed to stop worker", err);
+    toast.error("Erro ao parar worker", err.message);
   }
 }
 
@@ -549,12 +601,15 @@ async function triggerSchedule(id) {
   try {
     const res = await fetch(`${API_BASE}/api/schedules/${id}/trigger`, { method: "POST" });
     if (res.ok) {
-      alert("Rotina disparada com sucesso!");
+      toast.success("Rotina disparada", "Tarefa colocada na fila para execução imediata.");
       fetchSchedules();
       fetchOverview();
+    } else {
+      const err = await res.json();
+      toast.error("Erro ao disparar rotina", err.detail || "Falha na execução");
     }
   } catch (err) {
-    alert("Erro ao disparar rotina: " + err.message);
+    toast.error("Erro ao disparar rotina", err.message);
   }
 }
 
@@ -565,19 +620,24 @@ async function toggleSchedule(id, enabled) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
-    if (res.ok) fetchSchedules();
+    if (res.ok) {
+      toast.info(enabled ? "Rotina ativada" : "Rotina pausada", "Status do agendamento atualizado.");
+      fetchSchedules();
+    }
   } catch (err) {
-    alert("Erro ao alterar status da rotina: " + err.message);
+    toast.error("Erro ao alterar rotina", err.message);
   }
 }
 
 async function deleteSchedule(id) {
-  if (!confirm("Deseja realmente excluir este agendamento?")) return;
   try {
     const res = await fetch(`${API_BASE}/api/schedules/${id}`, { method: "DELETE" });
-    if (res.ok) fetchSchedules();
+    if (res.ok) {
+      toast.info("Rotina excluída", "Agendamento removido com sucesso.");
+      fetchSchedules();
+    }
   } catch (err) {
-    alert("Erro ao excluir agendamento: " + err.message);
+    toast.error("Erro ao excluir agendamento", err.message);
   }
 }
 
@@ -585,25 +645,25 @@ async function replayDlqJob(jobId) {
   try {
     const res = await fetch(`${API_BASE}/api/dlq/${jobId}/replay`, { method: "POST" });
     if (res.ok) {
-      alert("Job reenfileirado para execução!");
+      toast.success("Job reenfileirado", "Job reenviado para reprocessamento na fila.");
       fetchDlq("default");
       fetchOverview();
     }
   } catch (err) {
-    alert("Erro ao reenfileirar job: " + err.message);
+    toast.error("Erro ao reenfileirar job", err.message);
   }
 }
 
 async function purgeDlq(queue = "default") {
-  if (!confirm(`Deseja limpar todos os jobs falhos na DLQ da fila [${queue}]?`)) return;
   try {
     const res = await fetch(`${API_BASE}/api/dlq/${queue}/purge`, { method: "POST" });
     if (res.ok) {
+      toast.info("DLQ limpa", `Todos os jobs falhos na fila [${queue}] foram removidos.`);
       fetchDlq(queue);
       fetchOverview();
     }
   } catch (err) {
-    alert("Erro ao limpar DLQ: " + err.message);
+    toast.error("Erro ao limpar DLQ", err.message);
   }
 }
 
@@ -615,7 +675,7 @@ async function showJobDetails(jobId) {
     document.getElementById("job-detail-content").innerText = JSON.stringify(job, null, 2);
     openModal("modal-job-detail");
   } catch (err) {
-    alert("Erro ao buscar detalhes do job: " + err.message);
+    toast.error("Erro ao buscar detalhes", err.message);
   }
 }
 
@@ -690,7 +750,7 @@ async function handleEnqueueSubmit(e) {
   const taskName = selectVal === "__custom__" ? customVal : selectVal;
 
   if (!taskName) {
-    alert("Por favor, selecione ou informe o nome da tarefa.");
+    toast.warning("Selecione uma tarefa", "Por favor, selecione ou informe o nome da tarefa.");
     return;
   }
 
@@ -708,7 +768,7 @@ async function handleEnqueueSubmit(e) {
         parsedArgs.kwargs = obj.kwargs || (obj.args === undefined ? obj : {});
       }
     } catch (err) {
-      alert("JSON inválido no campo de argumentos.");
+      toast.error("JSON Inválido", "Verifique a formatação dos argumentos JSON da tarefa.");
       return;
     }
   }
@@ -729,7 +789,7 @@ async function handleEnqueueSubmit(e) {
       closeModal("modal-enqueue");
       document.getElementById("form-enqueue").reset();
       fetchOverview();
-      alert(`Tarefa '${taskName}' enfileirada com sucesso!`);
+      toast.success("Tarefa enfileirada", `Job '${taskName}' enviado para a fila [${queue}].`);
     } else {
       let errMsg = "Erro desconhecido";
       try {
@@ -738,10 +798,10 @@ async function handleEnqueueSubmit(e) {
       } catch {
         errMsg = await res.text();
       }
-      alert("Erro ao enfileirar: " + errMsg);
+      toast.error("Erro ao enfileirar", errMsg);
     }
   } catch (err) {
-    alert("Erro na requisição: " + err.message);
+    toast.error("Falha na requisição", err.message);
   }
 }
 
@@ -753,7 +813,7 @@ async function handleScheduleSubmit(e) {
   const taskName = selectVal === "__custom__" ? customVal : selectVal;
 
   if (!taskName) {
-    alert("Por favor, selecione ou informe o nome da tarefa.");
+    toast.warning("Selecione uma tarefa", "Por favor, selecione ou informe o nome da tarefa.");
     return;
   }
 
@@ -777,7 +837,7 @@ async function handleScheduleSubmit(e) {
         parsedArgs.kwargs = obj.kwargs || (obj.args === undefined ? obj : {});
       }
     } catch (err) {
-      alert("JSON inválido no campo de argumentos.");
+      toast.error("JSON Inválido", "Verifique a formatação dos argumentos JSON da rotina.");
       return;
     }
   }
@@ -806,7 +866,7 @@ async function handleScheduleSubmit(e) {
       document.getElementById("form-schedule").reset();
       fetchSchedules();
       fetchOverview();
-      alert(`Cron '${name}' cadastrado com sucesso!`);
+      toast.success("Cron cadastrado", `Rotina '${name}' configurada com sucesso.`);
     } else {
       let errMsg = "Erro desconhecido";
       try {
@@ -815,10 +875,10 @@ async function handleScheduleSubmit(e) {
       } catch {
         errMsg = await res.text();
       }
-      alert("Erro ao criar agendamento: " + errMsg);
+      toast.error("Erro ao criar agendamento", errMsg);
     }
   } catch (err) {
-    alert("Erro na requisição: " + err.message);
+    toast.error("Falha na requisição", err.message);
   }
 }
 
@@ -1016,6 +1076,6 @@ async function openJobTraceModal(jobId) {
 
     openModal("modal-lgtm-trace");
   } catch (err) {
-    alert("Erro ao abrir observabilidade do job: " + err.message);
+    toast.error("Erro ao abrir observabilidade", err.message);
   }
 }
