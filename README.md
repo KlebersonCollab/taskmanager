@@ -1,156 +1,167 @@
 # TaskManager ⚡
 
-> Modern high-performance background task execution engine inspired by **Celery** and **BullMQ**, featuring **Dynamic Cron Scheduling**, **Observabilidade Completa (LGTM Stack)**, **Dead Letter Queue (DLQ)**, worker heartbeat telemetry, backpressure resource guardrails, and a sleek **Linear Dark SPA Management Dashboard**.
+<div align="center">
+
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7%2B_AOF_Durable-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![UI](https://img.shields.io/badge/UI-Linear_Dark_System-5E6AD2?style=for-the-badge&logo=linear&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+
+**Engine moderna de execução e gerenciamento de background tasks em Python inspirada no Celery e BullMQ.**  
+*Agendador Cron Dinâmico • Observabilidade LGTM Completa • Dead Letter Queue Multi-Fila • Telemetria com Backpressure • Dashboard SPA Linear Dark.*
+
+<br/>
+
+<img src="docs/images/01_dashboard_overview.png" alt="TaskManager Dashboard Overview" width="100%" style="border-radius: 12px; border: 1px solid #23252a; box-shadow: 0 20px 40px rgba(0,0,0,0.6);" />
+
+</div>
 
 ---
 
-## 🌟 Key Features
+## 🌟 Principais Destaques
 
-- **🚀 Asyncio & Sync Worker Runtime**: Native support for Python async coroutines (`async def`) and synchronous functions (`def`), with configurable concurrency and timeouts.
-- **📦 Redis-Native Queues & Storage**: Zero heavyweight brokers. Uses Redis atomic lists (`LPOP`/`BLPOP`), sorted sets (delayed jobs & history), hashes, and Pub/Sub for sub-millisecond execution and event broadcasting.
-- **🧠 Zero-Dependency In-Memory Fallback**: Automatic fallback to built-in in-memory Redis (`fakeredis`) during development if an external Redis server is not running.
-- **✨ Simple `@task` Decorator & Signature Introspection**: Enqueue jobs with `.delay(*args, **kwargs)` or `.apply_async(...)`. The dashboard automatically inspects function parameters and docstrings to prefill typed JSON payloads.
-- **⏰ Dynamic Cron & Interval Scheduler**: Dynamic scheduling with standard 5-part cron syntax (`*/5 * * * *`) or interval in seconds, complete with live editing, toggle, and manual trigger without restarting services.
-- **🛡️ Resilience, DLQ & Backpressure**: Configurable retry policies with exponential backoff. Jobs exhausting retries land in a Dead Letter Queue (DLQ) with full stack traces and one-click replay. Workers feature memory/CPU backpressure circuit breakers.
-- **📊 LGTM Observability Stack**:
-  - **📈 Mimir/Prometheus**: Live aggregated KPIs (Success Rate %, Avg Duration ms, P95 Latency ms, Throughput/min).
-  - **📜 Loki**: Execution log stream, error tracebacks, and captured output.
-  - **⏱️ Tempo**: Lifecycle trace timeline waterfall (Enqueued ➔ Worker Dequeue ➔ Active ➔ Completed/Failed).
-  - **📊 Grafana Dashboard**: Live execution history table with status filtering and real-time WebSocket ticker.
-- **🎨 Linear Dark UI Dashboard**: Built to strict [DESIGN.md](DESIGN.md) specifications (`#010102` canvas, `#0f1011` panels, `#5e6ad2` accent), updating in real time via WebSockets.
+- **🚀 Asyncio & Sync Worker Runtime**: Suporte nativo e transparente para corrotinas assíncronas (`async def`) e funções síncronas (`def`), com concorrência ajustável e timeouts granulares.
+- **📦 Redis Broker com Durabilidade AOF**: Sem brokers pesados. Utiliza listas atômicas do Redis (`LPOP`/`BLPOP`), conjuntos ordenados para jobs agendados e histórico, e persistência AOF para garantia de *Zero Data Loss*.
+- **🧠 Fallback In-Memory Automático**: Modo de desenvolvimento zero-dependência (`fakeredis`) quando o Redis local não estiver em execução.
+- **✨ Decorator `@task` & Introspecção**: Enfileiramento via `.delay(*args, **kwargs)` ou `.apply_async(...)` com geração automática de schemas e payload no painel.
+- **⏰ Agendador Cron & Intervalos em Tempo Real**: Sintaxe padrão de 5 posições (`*/5 * * * *`) ou intervalo em segundos com distributed leader locking e execução garantida.
+- **🛡️ Resiliência, DLQ & Backpressure**: Retentativas com exponential backoff, Dead Letter Queue (DLQ) com inspeção de stacktrace e *One-Click Replay*. Circuit breaker de CPU e Memória RSS por worker.
+- **📊 Observabilidade LGTM Nativa**:
+  - **📈 Mimir / Prometheus**: KPIs em tempo real (Taxa de Sucesso %, Duração Média ms, Latência P95 ms, Throughput/min).
+  - **📜 Loki**: Console de logs de execução, erros e tracebacks capturados.
+  - **⏱️ Tempo**: Linha do tempo em cascata (Enqueued ➔ Dequeued ➔ Executing ➔ Finished/Failed).
+- **🎨 Design System Linear Dark**: Interface minimalista com atalho global **`Ctrl+K` (Command Palette)**, menu de ação unificado **`+ Criar ▾`**, e realce suave de linhas.
 
 ---
 
-## 🚀 Installation & Environment (with `uv`)
+## 📸 Galeria de Telas do Dashboard
+
+### 1. Visão Geral & Métricas em Tempo Real
+Acompanhe o estado de todas as filas, consumo de hardware dos workers e log de eventos ao vivo via WebSockets.
+<img src="docs/images/01_dashboard_overview.png" alt="Visão Geral" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
+
+---
+
+### 2. Menu Unificado `+ Criar ▾` & Paleta de Comandos (`Ctrl+K`)
+Navegue e execute qualquer ação em milissegundos sem tirar as mãos do teclado.
+<div align="center">
+  <img src="docs/images/08_quick_create_menu.png" alt="Menu Criar" width="48%" style="border-radius: 8px; border: 1px solid #23252a; margin-right: 2%;" />
+  <img src="docs/images/07_command_palette.png" alt="Command Palette Ctrl+K" width="48%" style="border-radius: 8px; border: 1px solid #23252a;" />
+</div>
+
+---
+
+### 3. Gerenciamento de Workers & Proteção de Recursos
+Monitore o uso de CPU/RAM de cada worker individual e pause ou interrompa processos com um clique.
+<img src="docs/images/02_workers_management.png" alt="Gerenciamento de Workers" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
+
+---
+
+### 4. Agendamentos Cron & Rotinas Periódicas
+Crie e edite agendamentos em tempo real sem precisar reiniciar os serviços ou fazer deploy.
+<img src="docs/images/04_cron_schedules.png" alt="Agendamentos Cron" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
+
+---
+
+### 5. Dead Letter Queue (DLQ) & Inspeção de Falhas
+Monitore jobs que esgotaram retentativas, visualize o stacktrace completo e faça o replay imediato para a fila.
+<img src="docs/images/05_dlq_inspector.png" alt="Dead Letter Queue" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
+
+---
+
+### 6. Observabilidade & Trace Waterfall (LGTM Stack)
+Inspecione a linha do tempo exata de execução de cada tarefa com logs capturados e payloads serializados.
+<img src="docs/images/06_observability_trace.png" alt="Observabilidade e Tracing" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
+
+---
+
+## 🚀 Instalação Rápida (com `uv`)
 
 ```bash
-# 1. Clone the repository
+# 1. Clonar o repositório
 git clone https://github.com/usuario/taskmanager.git
 cd taskmanager
 
-# 2. Sync virtual environment and install all dependencies
+# 2. Sincronizar o ambiente virtual e dependências
 uv sync --all-extras
 ```
 
 ---
 
-## 💻 Complete CLI Commands Reference
+## 💻 Comandos da CLI
 
-TaskManager provides a unified CLI with 4 primary commands: `dev`, `worker`, `scheduler`, and `server`.
+O TaskManager possui 4 comandos principais para desenvolvimento e produção:
 
-### 1. `taskmanager dev` (All-in-One Development Mode)
-Starts the **API Server + Dashboard**, **Worker**, and **Scheduler** in a single concurrent process.
+### 1. `taskmanager dev` (Modo Tudo-em-Um para Desenvolvimento)
+Inicia o **Servidor API + Dashboard Web**, o **Worker** e o **Scheduler** em um único comando concorrente.
 
 ```bash
-# Run with bundled example tasks (auto-falls back to in-memory Redis if local Redis is offline)
+# Iniciar ambiente dev com tarefas de exemplo
 uv run taskmanager dev --modules example_tasks
 
-# Customize host, port, concurrency, and memory guardrails
-uv run taskmanager dev --host 0.0.0.0 --port 8000 -c 8 --max-memory-mb 512 --max-cpu-percent 85 --modules example_tasks
+# Customizar porta, filas e guardrails de memória
+uv run taskmanager dev --port 8000 -c 8 --max-memory-mb 512 -m example_tasks
 ```
-
-**Options:**
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `--host HOST` | Host interface to bind API server | `0.0.0.0` |
-| `--port PORT` | Port for Dashboard & API server | `8000` |
-| `-q, --queues QUEUES` | Comma-separated queue names (auto-listens to all registered queues if `default`) | `default` |
-| `-c, --concurrency N` | Maximum concurrent tasks for the dev worker | `5` |
-| `--max-memory-mb MB` | Max RSS memory limit (MB) before pausing job consumption (backpressure) | `None` (Unlimited) |
-| `--max-cpu-percent PCT`| Max CPU percentage before pausing job consumption (backpressure) | `None` (Unlimited) |
-| `--redis-url URL` | Redis connection URL | `redis://localhost:6379/0` |
-| `--in-memory` | Force built-in In-Memory Redis mode | `False` |
-| `-m, --modules [MOD ...]` | Python modules or `.py` file paths to import for task auto-discovery | `[]` |
 
 ---
 
-### 2. `taskmanager worker` (Distributed Worker Process)
-Starts an async worker daemon capable of concurrent job execution with automatic Redis competing-consumers load balancing.
+### 2. `taskmanager worker` (Processo de Worker Dedicado)
+Inicia um processo de worker independente com balanceamento de carga automático via Redis.
 
 ```bash
-# Launch a dedicated worker for email jobs
+# Worker de alta concorrência para e-mails
 uv run taskmanager worker -n worker-emails -q emails -c 10 -m example_tasks
 
-# Launch a memory-capped worker for heavy reports and general queues
-uv run taskmanager worker -n worker-heavy -q reports,default,payments -c 4 --max-memory-mb 1024 -m example_tasks
-
-# Connect to a remote Redis instance
-uv run taskmanager worker -q default -c 5 --redis-url redis://redis.producao.com:6379/0 -m example_tasks
+# Worker com teto de memória e múltiplas filas
+uv run taskmanager worker -n worker-reports -q reports,default,payments -c 4 --max-memory-mb 1024 -m example_tasks
 ```
-
-**Options:**
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `-n, --name NAME` | Custom worker identifier name | `worker-<uuid>` |
-| `-q, --queues QUEUES` | Comma-separated queues to consume from (ordered priority) | `default` |
-| `-c, --concurrency N` | Maximum concurrent tasks for this worker | `5` |
-| `--max-memory-mb MB` | Max RSS memory (MB) before backpressure | `None` |
-| `--max-cpu-percent PCT`| Max CPU percentage before backpressure | `None` |
-| `--redis-url URL` | Redis connection URL | `redis://localhost:6379/0` |
-| `--in-memory` | Force in-memory mode | `False` |
-| `-m, --modules [MOD ...]` | Modules or `.py` files containing `@task` definitions | `[]` |
 
 ---
 
-### 3. `taskmanager scheduler` (Dynamic Cron Scheduler Daemon)
-Starts the distributed scheduler that evaluates cron expressions and interval schedules, enqueuing jobs with distributed Redis leader locking.
+### 3. `taskmanager scheduler` (Daemon do Cron Distribuído)
+Inicia o scheduler distribuído com leader locking automático no Redis.
 
 ```bash
 uv run taskmanager scheduler -m example_tasks
 ```
 
-**Options:**
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `--redis-url URL` | Redis connection URL | `redis://localhost:6379/0` |
-| `--in-memory` | Force in-memory mode | `False` |
-| `-m, --modules [MOD ...]` | Modules or `.py` files to import for task validation | `[]` |
-
 ---
 
-### 4. `taskmanager server` (Standalone Dashboard & REST API)
-Starts only the FastAPI application, WebSocket broadcaster, and Linear Dark SPA Dashboard without running local workers.
+### 4. `taskmanager server` (Servidor API & Dashboard Standalone)
+Inicia apenas o servidor web FastAPI e a interface SPA:
 
 ```bash
 uv run taskmanager server --host 0.0.0.0 --port 8000 --app-module example_tasks
 ```
 
-**Options:**
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `--host HOST` | Host address to bind | `0.0.0.0` |
-| `--port PORT` | HTTP port | `8000` |
-| `--redis-url URL` | Redis connection URL | `redis://localhost:6379/0` |
-| `--in-memory` | Force in-memory mode | `False` |
-| `--app-module [MOD ...]`| Modules containing `@task` definitions | `[]` |
-
 ---
 
-## 🐍 Python SDK Guide
+## 🐍 Guia do SDK Python
 
-### 1. Defining Tasks (`@task`)
+### 1. Definindo Tarefas com `@task`
 
 ```python
 # example_tasks.py
 import asyncio
 from taskmanager import task
 
-# Async Task with Exponential Backoff
+# Tarefa Assíncrona com Exponential Backoff
 @task(
     name="emails.send_welcome_email",
     queue="emails",
     max_retries=3,
-    retry_backoff=2.0,  # 2s, 4s, 8s backoff
+    retry_backoff=2.0,  # Retries em 2s, 4s, 8s
     timeout=10.0,
 )
 async def send_welcome_email(email: str, name: str) -> dict:
-    """Simulates async email delivery."""
-    await asyncio.sleep(1.5)
-    print(f"📧 Sent email to {name} <{email}>")
+    """Dispara e-mail de boas-vindas assincronamente."""
+    await asyncio.sleep(1.0)
+    print(f"📧 E-mail enviado para {name} <{email}>")
     return {"status": "delivered", "recipient": email}
 
 
-# Synchronous Heavy CPU Task
+# Tarefa Síncrona Pesada (Executada em Threadpool)
 @task(
     name="reports.generate_sales_report",
     queue="reports",
@@ -158,12 +169,11 @@ async def send_welcome_email(email: str, name: str) -> dict:
     timeout=60.0,
 )
 def generate_sales_report(year: int, month: int, department: str = "Geral") -> dict:
-    """Simulates CPU-heavy report generation."""
-    # Runs in threadpool executor without blocking the asyncio event loop
+    """Gera relatório PDF em background sem travar o event loop."""
     return {"file": f"/exports/{department}_{year}_{month:02d}.pdf"}
 ```
 
-### 2. Enqueuing Jobs Programmatically
+### 2. Enfileirando Jobs via Código
 
 ```python
 # enqueue_examples.py
@@ -171,105 +181,56 @@ import asyncio
 from example_tasks import send_welcome_email, generate_sales_report
 
 async def main():
-    # 1. Immediate Execution (.delay)
+    # 1. Execução Imediata (.delay)
     job1 = await send_welcome_email.delay("cliente@empresa.com", "Carlos Silva")
-    print(f"Enqueued Job ID: {job1.id}")
+    print(f"Job enfileirado: {job1.id}")
 
-    # 2. Delayed Execution (.apply_async)
+    # 2. Execução Agendada / Delay (.apply_async)
     job2 = await generate_sales_report.apply_async(
         kwargs={"year": 2026, "month": 8, "department": "Financeiro"},
-        delay=15.0,  # Runs after 15 seconds
+        delay=30.0,  # Executa após 30 segundos
         queue="reports",
         priority=1,
     )
-    print(f"Delayed Job ID: {job2.id}")
+    print(f"Job agendado: {job2.id}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 3. Built-in System Tasks (Zero-Code Script Execution)
-You can trigger standalone shell or python scripts directly from the Dashboard without authoring Python decorators:
-
-* **`system.run_command`**: Runs arbitrary shell commands (e.g. `python scripts/backup_database.py --compress`).
-* **`system.run_script`**: Runs a Python script file with arguments.
-
 ---
 
-## 🐳 Docker & Docker Compose Stack
+## 🐳 Stack Docker & Docker Compose
 
-Launch a complete multi-worker distributed cluster with Redis in seconds:
+Suba o cluster completo em contêineres com um único comando:
 
 ```bash
-# Start all services in the background
+# Iniciar todos os serviços com Redis AOF persistente
 docker compose up --build -d
 
-# Check cluster health
+# Visualizar status e healthchecks
 docker compose ps
 
-# Follow live cluster logs
-docker compose logs -f
-
-# Scale workers horizontally
+# Escalar workers dinamicamente
 docker compose up -d --scale worker-emails=3
-
-# Stop cluster
-docker compose down
 ```
 
-**Services in `docker-compose.yml`:**
-- 🔴 **`redis`**: Redis 7 Alpine with persistent storage volume (`redis_data`).
-- 🌐 **`dashboard`**: Management Dashboard & API server on [http://localhost:8000](http://localhost:8000).
-- 📧 **`worker-emails`**: High-concurrency worker dedicated to `emails` (`concurrency=10`).
-- 📊 **`worker-reports`**: Memory-capped worker for `reports,default,payments` (`max-memory-mb=1024`, `concurrency=4`).
-- ⏰ **`scheduler`**: Distributed cron scheduler daemon.
-
 ---
 
-## 📊 Management Dashboard Walkthrough
+## 🧪 Testes & Qualidade
 
-Access the web console directly at **http://localhost:8000/**:
-
-1. **Visão Geral (Overview)**: Real-time KPI cards for active workers, pending jobs, delayed jobs, DLQ jobs, worker CPU & RSS memory telemetry, and WebSocket live event ticker.
-2. **Workers**: Health matrix of all worker processes showing RSS memory (MB), CPU %, concurrency slots, queues, and last heartbeat.
-3. **Filas & Jobs**: Interactive explorer of all registered `@task` functions with signature inspection and prefilled JSON payload dispatching.
-4. **Cron & Agendamentos**: Dynamic cron manager allowing you to create, pause/resume, delete, or trigger now (⚡) recurring schedules.
-5. **Dead Letter Queue (DLQ)**: Failed job inspector displaying exception stack traces, attempt counts, and one-click replay (⚡).
-6. **📊 Execuções & Métricas (LGTM Stack)**:
-   - **Mimir/Prometheus KPIs**: Success rate %, average duration ms, P95 latency ms, and throughput/min.
-   - **Execution History**: Searchable and filterable log of recent jobs.
-   - **Tempo Trace & Loki Log Inspector**: Full lifecycle timeline waterfall and captured logs console.
-
----
-
-## 🧪 Testing & Verification
-
-Run the full automated test suite with in-memory Redis isolation:
 ```bash
+# Executar suíte completa de testes
 uv run pytest -v tests/
-```
 
-Run code quality linting:
-```bash
+# Executar linter de código
 uv run ruff check taskmanager tests example_tasks.py enqueue_examples.py scripts/
-```
 
-Run Pre-Commit Spec Drift Sensor:
-```bash
+# Sensor de Spec Drift (SDD)
 node .agents/scripts/check-spec-drift.js
 ```
 
 ---
 
-## ⚙️ Environment Variables
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` |
-| `REDIS_PREFIX` | Key namespace prefix in Redis | `tm` |
-| `DEFAULT_QUEUE` | Default queue name | `default` |
-
----
-
-## 📄 License
-MIT License. Open-source and enterprise-ready.
+## 📄 Licença
+Distribuído sob a licença [MIT](LICENSE). Pronto para uso individual ou corporativo.
