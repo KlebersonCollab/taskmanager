@@ -147,6 +147,30 @@ async function fetchOverview() {
     document.getElementById("m-dlq-jobs").innerText = data.total_dlq;
     document.getElementById("m-schedules").innerText = data.schedules_count;
 
+    // CPU & Memory Telemetry Updates
+    const cpuVal = data.system_cpu_percent !== undefined ? data.system_cpu_percent : 0;
+    const memVal = data.system_memory_percent !== undefined ? data.system_memory_percent : 0;
+    const memUsed = data.system_memory_used_mb !== undefined ? data.system_memory_used_mb : 0;
+    const memTotal = data.system_memory_total_mb !== undefined ? data.system_memory_total_mb : 0;
+
+    const cpuElem = document.getElementById("m-cpu");
+    const cpuBar = document.getElementById("m-cpu-bar");
+    if (cpuElem && cpuBar) {
+      cpuElem.innerText = `${cpuVal.toFixed(1)}%`;
+      cpuBar.style.width = `${Math.min(100, Math.max(0, cpuVal))}%`;
+      cpuBar.className = "metric-progress-fill" + (cpuVal > 85 ? " danger" : (cpuVal > 70 ? " warn" : ""));
+    }
+
+    const memElem = document.getElementById("m-memory");
+    const memBar = document.getElementById("m-memory-bar");
+    const memSub = document.getElementById("m-memory-sub");
+    if (memElem && memBar) {
+      memElem.innerText = `${memVal.toFixed(1)}%`;
+      memBar.style.width = `${Math.min(100, Math.max(0, memVal))}%`;
+      memBar.className = "metric-progress-fill" + (memVal > 85 ? " danger" : (memVal > 70 ? " warn" : ""));
+      if (memSub) memSub.innerText = `${memUsed} MB / ${memTotal} MB`;
+    }
+
     const tbody = document.getElementById("overview-queues-table");
     if (data.queues.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--ink-subtle);">Nenhuma fila ativa.</td></tr>`;

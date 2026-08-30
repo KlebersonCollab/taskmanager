@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import psutil
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -107,6 +108,19 @@ def create_app(
 
         schedules = await scheduler.list_schedules()
 
+        # System Resource Telemetry
+        try:
+            cpu_percent = psutil.cpu_percent(interval=None)
+            vmem = psutil.virtual_memory()
+            memory_used_mb = round(vmem.used / (1024 * 1024), 1)
+            memory_total_mb = round(vmem.total / (1024 * 1024), 1)
+            memory_percent = vmem.percent
+        except Exception:
+            cpu_percent = 0.0
+            memory_used_mb = 0.0
+            memory_total_mb = 0.0
+            memory_percent = 0.0
+
         return {
             "workers_count": len(active_workers),
             "total_workers": len(workers),
@@ -115,6 +129,10 @@ def create_app(
             "total_delayed": total_delayed,
             "total_dlq": total_dlq,
             "schedules_count": len(schedules),
+            "system_cpu_percent": cpu_percent,
+            "system_memory_used_mb": memory_used_mb,
+            "system_memory_total_mb": memory_total_mb,
+            "system_memory_percent": memory_percent,
             "queues": queue_summaries,
         }
 
