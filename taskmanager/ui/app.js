@@ -87,7 +87,7 @@ function refreshCurrentTab(isBackground = false) {
   if (currentTab === "workers") fetchWorkers();
   if (currentTab === "queues") fetchTasks();
   if (currentTab === "schedules") fetchSchedules();
-  if (currentTab === "dlq") fetchDlq("default");
+  if (currentTab === "dlq") fetchDlq();
   if (currentTab === "history") {
     if (!isBackground) fetchHistory();
     fetchObservabilityMetrics();
@@ -162,7 +162,7 @@ function handleLiveEvent(evt) {
   if (currentTab === "overview") fetchOverview();
   if (currentTab === "workers") fetchWorkers();
   if (currentTab === "schedules" && type.startsWith("schedule:")) fetchSchedules();
-  if (currentTab === "dlq" && (type === "job:failed" || type === "job:replayed")) fetchDlq("default");
+  if (currentTab === "dlq" && (type === "job:failed" || type === "job:replayed")) fetchDlq();
   if (currentTab === "history" && type.startsWith("job:")) {
     fetchHistory();
     fetchObservabilityMetrics();
@@ -258,9 +258,10 @@ async function fetchOverview() {
         <td><span class="badge ${q.delayed > 0 ? "badge-delayed" : "badge-pending"}">${q.delayed}</span></td>
         <td><span class="badge ${q.dlq > 0 ? "badge-failed" : "badge-pending"}">${q.dlq}</span></td>
         <td>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-secondary btn-sm" onclick="quickEnqueueTask('', '${escapeHtml(q.queue)}')">⚡ Enfileirar</button>
-            <button class="btn btn-secondary btn-sm" onclick="switchTab('queues')">Ver Tarefas</button>
+          <div class="action-group">
+            <button class="btn-action" title="Enfileirar Tarefa" onclick="quickEnqueueTask('', '${escapeHtml(q.queue)}')">⚡ Enfileirar</button>
+            <button class="btn-action" title="Ver Tarefas" onclick="switchTab('queues')">Ver Tarefas</button>
+            ${q.queue !== 'default' && q.pending === 0 && q.delayed === 0 && q.dlq === 0 ? `<button class="btn-action btn-action-danger" title="Excluir Fila Vazia" onclick="deleteQueue('${escapeHtml(q.queue)}')">🗑</button>` : ''}
           </div>
         </td>
       </tr>
@@ -281,7 +282,7 @@ async function fetchWorkers() {
 
     if (!container) return;
     if (workers.length === 0) {
-      container.innerHTML = `<div style="color: var(--ink-subtle);">Nenhum worker ativo encontrado. Clique em <strong>+ Iniciar Novo Worker</strong> acima ou execute <code>taskmanager worker</code> no terminal.</div>`;
+      container.innerHTML = `<div style="color: var(--ink-subtle);">Nenhum worker ativo encontrado. Clique em <strong>+ Criar ▾ ➔ Iniciar Novo Worker</strong> acima ou execute <code>taskmanager worker</code> no terminal.</div>`;
       return;
     }
 
@@ -293,8 +294,8 @@ async function fetchWorkers() {
       else if (w.status === "paused" || w.status === "throttled") badgeClass = "badge-delayed";
 
       const pauseBtn = w.status === "paused"
-        ? `<button class="btn btn-primary btn-sm" onclick="resumeWorker('${w.id}')">▶ Retomar</button>`
-        : `<button class="btn btn-secondary btn-sm" onclick="pauseWorker('${w.id}')">⏸ Pausar</button>`;
+        ? `<button class="btn-action" onclick="resumeWorker('${w.id}')">▶ Retomar</button>`
+        : `<button class="btn-action" onclick="pauseWorker('${w.id}')">⏸ Pausar</button>`;
 
       return `
         <div class="worker-card">
@@ -325,9 +326,9 @@ async function fetchWorkers() {
             <span>Último Heartbeat</span>
             <strong>${timeAgo(w.last_heartbeat)}</strong>
           </div>
-          <div style="margin-top: 14px; pt-2; border-top: 1px solid var(--hairline); display: flex; gap: 8px; justify-content: flex-end; padding-top: 10px;">
+          <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--hairline); display: flex; gap: 6px; justify-content: flex-end;">
             ${pauseBtn}
-            <button class="btn btn-secondary btn-sm" style="color: var(--semantic-error);" onclick="stopWorker('${w.id}')">⏹ Parar</button>
+            <button class="btn-action btn-action-danger" onclick="stopWorker('${w.id}')">⏹ Parar</button>
           </div>
         </div>
       `;
@@ -452,9 +453,9 @@ async function fetchTasks() {
         <td>${t.timeout ? `${t.timeout}s` : "Sem limite"}</td>
         <td><span class="badge ${t.is_async ? 'badge-active' : 'badge-pending'}">${t.is_async ? 'Async Coroutine' : 'Sync Function'}</span></td>
         <td>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-secondary btn-sm" onclick="quickEnqueueTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⚡ Enfileirar</button>
-            <button class="btn btn-secondary btn-sm" onclick="quickScheduleTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⏰ Agendar</button>
+          <div class="action-group">
+            <button class="btn-action" title="Disparar Tarefa Imediata" onclick="quickEnqueueTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⚡ Enfileirar</button>
+            <button class="btn-action" title="Configurar Cron ou Intervalo" onclick="quickScheduleTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⏰ Agendar</button>
           </div>
         </td>
       </tr>
@@ -567,10 +568,10 @@ async function fetchSchedules() {
           <td>${nextRunStr}</td>
           <td>${s.total_runs}</td>
           <td>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn btn-secondary btn-sm" title="Disparar Agora" onclick="triggerSchedule('${s.id}')">⚡</button>
-              <button class="btn btn-secondary btn-sm" onclick="toggleSchedule('${s.id}', ${!s.enabled})">${s.enabled ? 'Pausar' : 'Ativar'}</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteSchedule('${s.id}')">Excluir</button>
+            <div class="action-group">
+              <button class="btn-action" title="Disparar Agora" onclick="triggerSchedule('${s.id}')">⚡ Executar</button>
+              <button class="btn-action" title="${s.enabled ? 'Pausar' : 'Ativar'}" onclick="toggleSchedule('${s.id}', ${!s.enabled})">${s.enabled ? '⏸ Pausar' : '▶ Ativar'}</button>
+              <button class="btn-action btn-action-danger" title="Excluir Agendamento" onclick="deleteSchedule('${s.id}')">🗑</button>
             </div>
           </td>
         </tr>
@@ -581,14 +582,39 @@ async function fetchSchedules() {
   }
 }
 
-async function fetchDlq(queue = "default") {
+async function fetchDlq(selectedQueue = null) {
   try {
+    const filterSelect = document.getElementById("dlq-filter-queue");
+    const queue = selectedQueue || (filterSelect ? filterSelect.value : "all") || "all";
     const res = await fetch(`${API_BASE}/api/dlq/${queue}`);
     const jobs = await res.json();
     const tbody = document.getElementById("dlq-table");
+    const countBadge = document.getElementById("dlq-count-badge");
 
+    if (countBadge) {
+      countBadge.innerText = `${jobs.length} falha${jobs.length !== 1 ? 's' : ''}`;
+    }
+
+    // Populate queue filter dropdown with active queues
+    if (filterSelect && filterSelect.dataset.populated !== "true") {
+      try {
+        const queuesRes = await fetch(`${API_BASE}/api/queues`);
+        if (queuesRes.ok) {
+          const queues = await queuesRes.json();
+          const currentVal = filterSelect.value || "all";
+          const optionsHtml = `<option value="all">Todas as Filas</option>` +
+            queues.map(q => `<option value="${escapeHtml(q.queue)}">${escapeHtml(q.queue)} (${q.dlq})</option>`).join("");
+          filterSelect.innerHTML = optionsHtml;
+          filterSelect.value = currentVal;
+        }
+      } catch {
+        // Soft fail
+      }
+    }
+
+    if (!tbody) return;
     if (jobs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--ink-subtle);">Nenhum job falho na Dead Letter Queue da fila [${queue}].</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--ink-subtle);">Nenhum job falho na Dead Letter Queue ${queue === 'all' ? 'em nenhuma fila' : `da fila [${queue}]`}.</td></tr>`;
       return;
     }
 
@@ -596,13 +622,13 @@ async function fetchDlq(queue = "default") {
       <tr>
         <td><code>${j.id.substring(0, 8)}</code></td>
         <td><strong>${escapeHtml(j.task_name)}</strong></td>
-        <td>${escapeHtml(j.queue)}</td>
+        <td><code>${escapeHtml(j.queue)}</code></td>
         <td style="color: var(--semantic-error);">${escapeHtml(j.error || "Erro desconhecido")}</td>
         <td>${j.retry_count} / ${j.max_retries}</td>
         <td>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-secondary btn-sm" onclick="showJobDetails('${j.id}')">Detalhes</button>
-            <button class="btn btn-primary btn-sm" onclick="replayDlqJob('${j.id}')">⚡ Replay</button>
+          <div class="action-group">
+            <button class="btn-action" title="Ver Detalhes do Erro" onclick="showJobDetails('${j.id}')">🔍 Detalhes</button>
+            <button class="btn-action" title="Reenfileirar Job na Fila" onclick="replayDlqJob('${j.id}')">⚡ Replay</button>
           </div>
         </td>
       </tr>
@@ -663,7 +689,7 @@ async function replayDlqJob(jobId) {
     const res = await fetch(`${API_BASE}/api/dlq/${jobId}/replay`, { method: "POST" });
     if (res.ok) {
       toast.success("Job reenfileirado", "Job reenviado para reprocessamento na fila.");
-      fetchDlq("default");
+      fetchDlq();
       fetchOverview();
     }
   } catch (err) {
@@ -671,11 +697,17 @@ async function replayDlqJob(jobId) {
   }
 }
 
-async function purgeDlq(queue = "default") {
+async function handlePurgeDlq() {
+  const filterSelect = document.getElementById("dlq-filter-queue");
+  const queue = (filterSelect ? filterSelect.value : "all") || "all";
+  await purgeDlq(queue);
+}
+
+async function purgeDlq(queue = "all") {
   try {
     const res = await fetch(`${API_BASE}/api/dlq/${queue}/purge`, { method: "POST" });
     if (res.ok) {
-      toast.info("DLQ limpa", `Todos os jobs falhos na fila [${queue}] foram removidos.`);
+      toast.info("DLQ limpa", `Jobs falhos ${queue === 'all' ? 'de todas as filas' : `na fila [${queue}]`} foram removidos.`);
       fetchDlq(queue);
       fetchOverview();
     }
@@ -1009,7 +1041,9 @@ async function fetchHistory() {
           <td>${escapeHtml(j.worker_id || "--")}</td>
           <td>${timeStr}</td>
           <td>
-            <button class="btn btn-secondary btn-sm" onclick="openJobTraceModal('${j.id}')">🔍 Trace & Logs</button>
+            <div class="action-group">
+              <button class="btn-action" onclick="openJobTraceModal('${j.id}')">🔍 Trace & Logs</button>
+            </div>
           </td>
         </tr>
       `;
@@ -1131,3 +1165,220 @@ async function executeMaintenanceFlush(target) {
     toast.error("Falha na Requisição", err.message);
   }
 }
+
+// --- Dropdown Menu Controller ---
+
+function toggleDropdown(menuId) {
+  const menu = document.getElementById(menuId);
+  const parent = menu?.closest('.dropdown');
+  if (!parent) return;
+  const isOpen = parent.classList.contains('open');
+  closeDropdowns();
+  if (!isOpen) {
+    parent.classList.add('open');
+  }
+}
+
+function closeDropdowns() {
+  document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dropdown')) {
+    closeDropdowns();
+  }
+});
+
+// --- Queue Management (Create & Delete) ---
+
+function openCreateQueueModal() {
+  const input = document.getElementById("create-queue-name");
+  if (input) {
+    input.value = "";
+    setTimeout(() => input.focus(), 50);
+  }
+  openModal("modal-create-queue");
+}
+
+async function handleCreateQueueSubmit(e) {
+  e.preventDefault();
+  const input = document.getElementById("create-queue-name");
+  const name = input?.value.trim();
+  if (!name) {
+    toast.warning("Nome da Fila", "Por favor informe um nome válido para a fila.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/queues`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+
+    if (res.ok) {
+      closeModal("modal-create-queue");
+      toast.success("Fila criada", `A fila [${name}] foi registrada com sucesso no Redis.`);
+      logEvent("QUEUE", `Nova fila registrada: [${name}]`);
+      fetchOverview();
+      if (currentTab === "queues") fetchTasks();
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      toast.error("Erro ao criar fila", errData.detail || "Falha ao registrar fila.");
+    }
+  } catch (err) {
+    toast.error("Falha na requisição", err.message);
+  }
+}
+
+async function deleteQueue(queueName) {
+  if (queueName === "default") {
+    toast.warning("Ação não permitida", "A fila padrão 'default' não pode ser excluída.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/queues/${queueName}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.info("Fila excluída", `A fila [${queueName}] foi removida do Redis.`);
+      logEvent("QUEUE", `Fila removida: [${queueName}]`);
+      fetchOverview();
+      if (currentTab === "queues") fetchTasks();
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      toast.error("Erro ao excluir fila", errData.detail || "Falha ao remover fila.");
+    }
+  } catch (err) {
+    toast.error("Falha na requisição", err.message);
+  }
+}
+
+// --- Command Palette Controller (Ctrl+K / ⌘K) ---
+
+let cmdSelectedIndex = 0;
+const defaultCommands = [
+  { id: "new-task", icon: "⚡", title: "Nova Tarefa", desc: "Enfileirar job imediato ou com delay", action: () => openEnqueueModal() },
+  { id: "new-cron", icon: "⏰", title: "Novo Cron / Agendamento", desc: "Programar rotina periódica ou intervalo", action: () => openScheduleModal() },
+  { id: "new-queue", icon: "📦", title: "Nova Fila", desc: "Registrar uma nova fila no Redis", action: () => openCreateQueueModal() },
+  { id: "new-worker", icon: "🤖", title: "Iniciar Novo Worker", desc: "Spawnar processo de worker dinâmico", action: () => openSpawnWorkerModal() },
+  { id: "tab-overview", icon: "📊", title: "Ir para: Visão Geral", desc: "Métricas globais de filas e telemetria", action: () => switchTab("overview") },
+  { id: "tab-workers", icon: "👥", title: "Ir para: Workers", desc: "Gerenciar workers ativos, pausar e retomar", action: () => switchTab("workers") },
+  { id: "tab-queues", icon: "📋", title: "Ir para: Filas & Tarefas", desc: "Explorar funções @task registradas", action: () => switchTab("queues") },
+  { id: "tab-schedules", icon: "📅", title: "Ir para: Cron & Agendamentos", desc: "Ver rotinas ativas e disparar", action: () => switchTab("schedules") },
+  { id: "tab-dlq", icon: "⚠️", title: "Ir para: Dead Letter Queue (DLQ)", desc: "Inspecionar e fazer replay de falhas", action: () => switchTab("dlq") },
+  { id: "tab-history", icon: "📈", title: "Ir para: Observabilidade & Histórico", desc: "Métricas LGTM, traces Tempo e logs Loki", action: () => switchTab("history") },
+  { id: "flush-redis", icon: "🧹", title: "Limpar Redis & Manutenção", desc: "Abrir painel de flush atômico do Redis", action: () => openMaintenanceModal() },
+];
+
+function openCommandPalette() {
+  openModal("modal-command-palette");
+  const input = document.getElementById("cmd-search-input");
+  if (input) {
+    input.value = "";
+    setTimeout(() => input.focus(), 50);
+  }
+  renderCommandResults(defaultCommands);
+}
+
+function handleCommandSearch(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) {
+    renderCommandResults(defaultCommands);
+    return;
+  }
+
+  const filtered = defaultCommands.filter(c => 
+    c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)
+  );
+
+  // Search dynamically in registered tasks
+  const matchingTasks = (cachedTasks || []).filter(t => 
+    t.name.toLowerCase().includes(q) || (t.queue && t.queue.toLowerCase().includes(q))
+  ).map(t => ({
+    id: `task-${t.name}`,
+    icon: "⚡",
+    title: `Enfileirar: ${t.name}`,
+    desc: `Fila: [${t.queue}] | Timeout: ${t.timeout ? `${t.timeout}s` : 'Sem limite'}`,
+    action: () => quickEnqueueTask(t.name, t.queue)
+  }));
+
+  renderCommandResults([...filtered, ...matchingTasks]);
+}
+
+function renderCommandResults(list) {
+  const container = document.getElementById("cmd-palette-results");
+  if (!container) return;
+  cmdSelectedIndex = 0;
+
+  if (list.length === 0) {
+    container.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--ink-subtle); font-size: 13px;">Nenhum comando ou tarefa encontrada.</div>`;
+    return;
+  }
+
+  window._activeCommandsList = list;
+
+  container.innerHTML = list.map((item, idx) => `
+    <div class="cmd-item ${idx === 0 ? 'selected' : ''}" data-index="${idx}" onclick="executeCommandByIndex(${idx})">
+      <div class="cmd-item-left">
+        <span style="font-size: 15px;">${item.icon}</span>
+        <div>
+          <div style="font-weight: 500; color: var(--ink); font-size: 13px;">${escapeHtml(item.title)}</div>
+          <div style="font-size: 11px; color: var(--ink-subtle);">${escapeHtml(item.desc)}</div>
+        </div>
+      </div>
+      <span style="font-size: 11px; color: var(--ink-tertiary);">↵</span>
+    </div>
+  `).join("");
+}
+
+function executeCommandByIndex(index) {
+  const list = window._activeCommandsList || defaultCommands;
+  if (list[index] && typeof list[index].action === "function") {
+    closeModal("modal-command-palette");
+    list[index].action();
+  }
+}
+
+function handleCommandKeyDown(e) {
+  const list = window._activeCommandsList || [];
+  if (list.length === 0) return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    cmdSelectedIndex = (cmdSelectedIndex + 1) % list.length;
+    updateSelectedCmdItem();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    cmdSelectedIndex = (cmdSelectedIndex - 1 + list.length) % list.length;
+    updateSelectedCmdItem();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    executeCommandByIndex(cmdSelectedIndex);
+  }
+}
+
+function updateSelectedCmdItem() {
+  document.querySelectorAll(".cmd-item").forEach((el, idx) => {
+    el.classList.toggle("selected", idx === cmdSelectedIndex);
+    if (idx === cmdSelectedIndex) {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  });
+}
+
+// Global Keyboard Shortcut: Ctrl+K / Cmd+K
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    const modal = document.getElementById("modal-command-palette");
+    if (modal?.classList.contains("show")) {
+      closeModal("modal-command-palette");
+    } else {
+      openCommandPalette();
+    }
+  } else if (e.key === "Escape") {
+    closeModal("modal-command-palette");
+    closeDropdowns();
+  }
+});
+

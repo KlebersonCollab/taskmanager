@@ -162,7 +162,6 @@ async def run_dev(
         broker=broker,
         task_registry=registry,
     )
-    sched = Scheduler(broker)
     app = create_app(broker=broker, task_reg=registry)
 
     config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
@@ -173,7 +172,6 @@ async def run_dev(
     await asyncio.gather(
         server.serve(),
         worker.start(),
-        sched.start(),
     )
 
 

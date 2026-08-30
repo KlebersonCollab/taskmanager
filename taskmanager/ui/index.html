@@ -41,13 +41,61 @@
       </nav>
 
       <div class="nav-actions">
+        <button class="btn-command-palette" onclick="openCommandPalette()" title="Busca & Comandos (Ctrl+K)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span class="cmd-text">Buscar ou Comandos</span>
+          <kbd class="kbd-badge">Ctrl K</kbd>
+        </button>
+
         <div class="ws-status">
           <span class="status-dot" id="wsDot"></span>
           <span id="wsText">Conectando...</span>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="openMaintenanceModal()" title="Limpeza do Redis & Manutenção">🧹 Limpar Redis</button>
-        <button class="btn btn-secondary btn-sm" onclick="openEnqueueModal()">+ Nova Tarefa</button>
-        <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Novo Cron</button>
+
+        <button class="btn-icon" onclick="openMaintenanceModal()" title="Limpeza & Manutenção do Redis">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+
+        <div class="dropdown" id="dropdown-create">
+          <button class="btn btn-primary" onclick="toggleDropdown('dropdown-create-menu')">
+            <span>+ Criar</span>
+            <svg class="dropdown-chevron" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M4.5 6l3.5 3.5 3.5-3.5z"/></svg>
+          </button>
+          <div class="dropdown-menu" id="dropdown-create-menu">
+            <button class="dropdown-item" onclick="openEnqueueModal(); closeDropdowns();">
+              <span class="dropdown-icon">⚡</span>
+              <div>
+                <div class="dropdown-title">Nova Tarefa</div>
+                <div class="dropdown-desc">Enfileirar execução imediata ou com delay</div>
+              </div>
+            </button>
+            <button class="dropdown-item" onclick="openScheduleModal(); closeDropdowns();">
+              <span class="dropdown-icon">⏰</span>
+              <div>
+                <div class="dropdown-title">Novo Cron / Agendamento</div>
+                <div class="dropdown-desc">Programar execução periódica ou intervalo</div>
+              </div>
+            </button>
+            <button class="dropdown-item" onclick="openCreateQueueModal(); closeDropdowns();">
+              <span class="dropdown-icon">📦</span>
+              <div>
+                <div class="dropdown-title">Nova Fila</div>
+                <div class="dropdown-desc">Registrar uma nova fila no Redis</div>
+              </div>
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" onclick="openSpawnWorkerModal(); closeDropdowns();">
+              <span class="dropdown-icon">🤖</span>
+              <div>
+                <div class="dropdown-title">Iniciar Novo Worker</div>
+                <div class="dropdown-desc">Spawnar processo de worker dinâmico</div>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -107,6 +155,9 @@
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Status das Filas</h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="openCreateQueueModal()">+ Nova Fila</button>
+            </div>
           </div>
           <div class="card-body table-container">
             <table>
@@ -168,6 +219,10 @@
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Explorador de Tarefas Registradas</h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="openCreateQueueModal()">+ Nova Fila</button>
+              <button class="btn btn-primary btn-sm" onclick="openEnqueueModal()">+ Nova Tarefa</button>
+            </div>
           </div>
           <div class="card-body table-container">
             <table>
@@ -222,11 +277,17 @@
       <!-- 5. DLQ Tab -->
       <section id="tab-dlq" class="tab-pane">
         <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Dead Letter Queue (DLQ)</h2>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn btn-danger btn-sm" onclick="purgeDlq('default')">Limpar DLQ</button>
-              <button class="btn btn-secondary btn-sm" onclick="fetchDlq('default')">Atualizar</button>
+          <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+              <h2 class="card-title">Dead Letter Queue (DLQ)</h2>
+              <span class="badge badge-failed" id="dlq-count-badge">0 falhas</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select class="form-select" id="dlq-filter-queue" onchange="fetchDlq()" style="width: 160px; padding: 4px 8px; font-size: 12px;">
+                <option value="all">Todas as Filas</option>
+              </select>
+              <button class="btn btn-danger btn-sm" onclick="handlePurgeDlq()">Limpar DLQ</button>
+              <button class="btn btn-secondary btn-sm" onclick="fetchDlq()">🔄 Atualizar</button>
             </div>
           </div>
           <div class="card-body table-container">
@@ -565,6 +626,48 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-maintenance')">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Create Queue -->
+    <div class="modal-backdrop" id="modal-create-queue">
+      <div class="modal" style="max-width: 440px;">
+        <div class="modal-header">
+          <div>
+            <h3>📦 Criar Nova Fila</h3>
+            <div style="font-size: 12px; color: var(--ink-tertiary);">Registro no Broker Redis</div>
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-create-queue')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-create-queue" onsubmit="handleCreateQueueSubmit(event)">
+            <div class="form-group">
+              <label class="form-label">Nome da Fila</label>
+              <input type="text" class="form-input" id="create-queue-name" placeholder="ex: payments, webhooks, export" required pattern="[a-zA-Z0-9_\-]+" title="Use apenas letras, números, hífen ou underline" autofocus />
+              <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 6px;">
+                A fila será registrada no Redis imediatamente e estará disponível para workers, agendamentos e envio de tarefas.
+              </div>
+            </div>
+            <div class="modal-footer" style="margin: 20px -20px -20px -20px;">
+              <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-queue')">Cancelar</button>
+              <button type="submit" class="btn btn-primary">Criar Fila</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Command Palette (Ctrl+K) -->
+    <div class="modal-backdrop" id="modal-command-palette" onclick="if(event.target===this)closeModal('modal-command-palette')">
+      <div class="modal cmd-palette-modal">
+        <div class="cmd-palette-search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="cmd-search-input" placeholder="Digite um comando, ação ou busque uma tarefa..." oninput="handleCommandSearch(this.value)" onkeydown="handleCommandKeyDown(event)" autocomplete="off" />
+          <kbd class="kbd-badge" style="cursor: pointer;" onclick="closeModal('modal-command-palette')">ESC</kbd>
+        </div>
+        <div class="cmd-palette-results" id="cmd-palette-results">
+          <!-- Populated dynamically by app.js -->
         </div>
       </div>
     </div>

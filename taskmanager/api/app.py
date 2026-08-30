@@ -71,8 +71,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await event_manager.start_listener()
-        yield
-        await event_manager.stop_listener()
+        sched_task = asyncio.create_task(scheduler.start())
+        try:
+            yield
+        finally:
+            await scheduler.stop()
+            sched_task.cancel()
+            await event_manager.stop_listener()
 
     app = FastAPI(
         title="TaskManager API",
@@ -167,6 +172,26 @@ def create_app(
             m = await broker.get_queue_metrics(q)
             results.append(m)
         return results
+
+    @app.post("/api/queues")
+    async def create_queue_endpoint(payload: dict[str, str]):
+        name = payload.get("name", "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Nome da fila é obrigatório.")
+        created = await broker.create_queue(name)
+        if not created:
+            raise HTTPException(status_code=400, detail="Nome de fila inválido.")
+        metrics = await broker.get_queue_metrics(name)
+        return {"status": "created", "queue": name, "metrics": metrics}
+
+    @app.delete("/api/queues/{queue}")
+    async def delete_queue_endpoint(queue: str):
+        if queue == "default":
+            raise HTTPException(status_code=400, detail="A fila 'default' não pode ser excluída.")
+        deleted = await broker.delete_queue(queue)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Fila não encontrada.")
+        return {"status": "deleted", "queue": queue}
 
     @app.get("/api/workers")
     async def get_workers():
@@ -393,8 +418,9 @@ def create_app(
         return {"status": "triggered", "job": job}
 
     # --- DLQ Endpoints ---
+    @app.get("/api/dlq")
     @app.get("/api/dlq/{queue}")
-    async def get_dlq(queue: str):
+    async def get_dlq(queue: str = "all"):
         return await broker.get_dlq_jobs(queue)
 
     @app.post("/api/dlq/{job_id}/replay")
@@ -404,10 +430,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="Job not found in DLQ")
         return {"status": "replayed", "job": replayed}
 
+    @app.post("/api/dlq/purge")
     @app.post("/api/dlq/{queue}/purge")
-    async def purge_dlq(queue: str):
+    async def purge_dlq(queue: str = "all"):
         count = await broker.purge_dlq(queue)
-        return {"status": "purged", "count": count}
+        return {"status": "purged", "count": count, "queue": queue}
 
     # --- Maintenance & Flush Endpoints ---
     @app.post("/api/maintenance/flush")

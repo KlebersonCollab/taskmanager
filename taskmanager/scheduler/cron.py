@@ -39,7 +39,7 @@ def calculate_next_run(schedule: Schedule, from_timestamp: float | None = None) 
     if schedule.schedule_type == ScheduleType.CRON:
         if not schedule.cron_expression or not croniter.is_valid(schedule.cron_expression):
             raise ValueError(f"Invalid cron expression: {schedule.cron_expression}")
-        base_dt = datetime.fromtimestamp(base_time, tz=UTC)
+        base_dt = datetime.fromtimestamp(base_time, tz=UTC).astimezone()
         iter_cron = croniter(schedule.cron_expression, base_dt)
         next_dt = iter_cron.get_next(datetime)
         return next_dt.timestamp()

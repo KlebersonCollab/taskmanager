@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -5,6 +8,7 @@ from taskmanager.api.app import create_app
 from taskmanager.core.broker import RedisBroker
 from taskmanager.core.job import Job, JobStatus
 from taskmanager.core.task import TaskRegistry, task
+from taskmanager.scheduler.cron import Schedule, ScheduleType
 
 
 @pytest.fixture
@@ -40,6 +44,34 @@ async def test_api_overview_and_queues(app_setup):
         res_queues = await client.get("/api/queues")
         assert res_queues.status_code == 200
         assert isinstance(res_queues.json(), list)
+
+        # 1. Create custom queue
+        res_create_q = await client.post("/api/queues", json={"name": "custom_queue_test"})
+        assert res_create_q.status_code == 200
+        assert res_create_q.json()["status"] == "created"
+        assert res_create_q.json()["queue"] == "custom_queue_test"
+
+        # 2. Verify queue appears in list
+        res_queues2 = await client.get("/api/queues")
+        q_names = [q["queue"] for q in res_queues2.json()]
+        assert "custom_queue_test" in q_names
+
+        # 3. Create invalid empty queue
+        res_err = await client.post("/api/queues", json={"name": "   "})
+        assert res_err.status_code == 400
+
+        # 4. Delete default queue forbidden
+        res_del_def = await client.delete("/api/queues/default")
+        assert res_del_def.status_code == 400
+
+        # 5. Delete custom queue
+        res_del_q = await client.delete("/api/queues/custom_queue_test")
+        assert res_del_q.status_code == 200
+        assert res_del_q.json()["status"] == "deleted"
+
+        # 6. Delete nonexistent queue
+        res_del_non = await client.delete("/api/queues/non_existent_queue_xyz")
+        assert res_del_non.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -100,30 +132,51 @@ async def test_api_schedules_crud(app_setup):
 @pytest.mark.asyncio
 async def test_api_dlq_operations(app_setup):
     app, broker, _ = app_setup
-    # Manually seed a DLQ job
-    job = Job(
-        task_name="failed_task", queue="default", status=JobStatus.FAILED, error="CriticalError"
+    # Manually seed DLQ jobs in different queues
+    job1 = Job(
+        task_name="failed_task_1", queue="default", status=JobStatus.FAILED, error="CriticalError"
     )
-    await broker.save_job(job)
-    await broker.redis.rpush(broker._key_dlq("default"), job.id)
+    job2 = Job(
+        task_name="failed_task_2", queue="payments", status=JobStatus.FAILED, error="PaymentDeclined"
+    )
+    await broker.save_job(job1)
+    await broker.save_job(job2)
+    await broker.redis.sadd(broker._key_queues(), "default", "payments")
+    await broker.redis.rpush(broker._key_dlq("default"), job1.id)
+    await broker.redis.rpush(broker._key_dlq("payments"), job2.id)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Fetch DLQ
-        res = await client.get("/api/dlq/default")
-        assert res.status_code == 200
-        dlq_list = res.json()
-        assert len(dlq_list) == 1
-        assert dlq_list[0]["id"] == job.id
+        # Fetch DLQ for all queues
+        res_all = await client.get("/api/dlq")
+        assert res_all.status_code == 200
+        dlq_all = res_all.json()
+        assert len(dlq_all) == 2
 
-        # Replay DLQ
-        res_replay = await client.post(f"/api/dlq/{job.id}/replay")
+        # Fetch DLQ for specific payments queue
+        res_pay = await client.get("/api/dlq/payments")
+        assert res_pay.status_code == 200
+        dlq_pay = res_pay.json()
+        assert len(dlq_pay) == 1
+        assert dlq_pay[0]["id"] == job2.id
+
+        # Replay DLQ job1
+        res_replay = await client.post(f"/api/dlq/{job1.id}/replay")
         assert res_replay.status_code == 200
         assert res_replay.json()["status"] == "replayed"
 
-        # Check DLQ is now empty
+        # Check default DLQ is empty, but payments still has job2
         res_after = await client.get("/api/dlq/default")
         assert len(res_after.json()) == 0
+        res_after_all = await client.get("/api/dlq")
+        assert len(res_after_all.json()) == 1
+
+        # Purge all DLQ
+        res_purge = await client.post("/api/dlq/purge")
+        assert res_purge.status_code == 200
+        assert res_purge.json()["status"] == "purged"
+        res_final = await client.get("/api/dlq")
+        assert len(res_final.json()) == 0
 
 
 @pytest.mark.asyncio
@@ -224,3 +277,28 @@ async def test_api_maintenance_flush(app_setup):
         # Invalid target
         res_inv = await client.post("/api/maintenance/flush", json={"target": "invalid"})
         assert res_inv.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_api_lifespan_scheduler_execution(app_setup):
+    app, broker, _ = app_setup
+    # Add a schedule that is immediately due
+    sched = Schedule(
+        name="Lifespan Sched",
+        task_name="api_ping",
+        schedule_type=ScheduleType.INTERVAL,
+        interval_seconds=0.5,
+        next_run=time.time() - 1.0,
+    )
+    await app.state.scheduler.add_schedule(sched)
+
+    # Use lifespan context manager to run lifespan startup/shutdown
+    async with app.router.lifespan_context(app):
+        # Give the scheduler daemon a moment to tick
+        await asyncio.sleep(1.2)
+
+        # Verify job was enqueued into broker
+        fetched = await broker.fetch_next_job(["default"], worker_id="lifespan-w")
+        assert fetched is not None
+        assert fetched.task_name == "api_ping"
+

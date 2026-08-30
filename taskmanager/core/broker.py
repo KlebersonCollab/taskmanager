@@ -252,14 +252,24 @@ class RedisBroker:
         return False
 
     # --- DLQ Operations ---
-    async def get_dlq_jobs(self, queue: str, limit: int = 50) -> list[Job]:
-        """Returns jobs in the Dead Letter Queue for a specific queue."""
-        job_ids = await self.redis.lrange(self._key_dlq(queue), 0, limit - 1)
+    async def get_dlq_jobs(self, queue: str | None = None, limit: int = 50) -> list[Job]:
+        """Returns jobs in the Dead Letter Queue for a specific queue or all queues."""
+        if queue and queue != "all":
+            queues = [queue]
+        else:
+            queues = await self.get_all_queues()
+
         jobs: list[Job] = []
-        for jid in job_ids:
-            job = await self.get_job(jid)
-            if job:
-                jobs.append(job)
+        for q in queues:
+            job_ids = await self.redis.lrange(self._key_dlq(q), 0, limit - 1)
+            for jid in job_ids:
+                job = await self.get_job(jid)
+                if job:
+                    jobs.append(job)
+                if len(jobs) >= limit:
+                    break
+            if len(jobs) >= limit:
+                break
         return jobs
 
     async def replay_dlq_job(self, job_id: str) -> Job | None:
@@ -280,13 +290,20 @@ class RedisBroker:
         await self.publish_event("job:replayed", {"job_id": job.id, "queue": job.queue})
         return job
 
-    async def purge_dlq(self, queue: str) -> int:
-        """Removes all jobs from the DLQ of a specific queue."""
-        dlq_key = self._key_dlq(queue)
-        job_ids = await self.redis.lrange(dlq_key, 0, -1)
-        count = len(job_ids)
-        await self.redis.delete(dlq_key)
-        return count
+    async def purge_dlq(self, queue: str = "all") -> int:
+        """Removes all jobs from the DLQ of a specific queue or all queues."""
+        if queue and queue != "all":
+            queues = [queue]
+        else:
+            queues = await self.get_all_queues()
+
+        total_count = 0
+        for q in queues:
+            dlq_key = self._key_dlq(q)
+            job_ids = await self.redis.lrange(dlq_key, 0, -1)
+            total_count += len(job_ids)
+            await self.redis.delete(dlq_key)
+        return total_count
 
     # --- Maintenance & Flush Operations ---
     async def flush_queues(self) -> dict[str, int]:
@@ -323,6 +340,31 @@ class RedisBroker:
         return deleted_count
 
     # --- Telemetry & Metrics ---
+    async def create_queue(self, queue: str) -> bool:
+        """Explicitly registers a queue in Redis."""
+        cleaned = queue.strip()
+        if not cleaned:
+            return False
+        await self.redis.sadd(self._key_queues(), cleaned)
+        await self.publish_event("queue:created", {"queue": cleaned})
+        return True
+
+    async def delete_queue(self, queue: str) -> bool:
+        """Deletes a queue from registered queues and deletes remaining queue data."""
+        cleaned = queue.strip()
+        if not cleaned or cleaned == "default":
+            return False
+        res = await self.redis.srem(self._key_queues(), cleaned)
+        await self.redis.delete(
+            self._key_queue(cleaned),
+            self._key_delayed(cleaned),
+            self._key_dlq(cleaned),
+        )
+        if res > 0:
+            await self.publish_event("queue:deleted", {"queue": cleaned})
+            return True
+        return False
+
     async def get_all_queues(self) -> list[str]:
         """Returns all registered queue names."""
         queues = await self.redis.smembers(self._key_queues())
