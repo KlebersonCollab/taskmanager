@@ -98,7 +98,10 @@ function handleLiveEvent(evt) {
   else if (type === "job:completed") summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${data.duration?.toFixed(2)}s)`;
   else if (type === "job:failed") summary = `Job ${data.job_id?.substring(0, 8)} FALHOU -> DLQ: ${data.error}`;
   else if (type === "job:retrying") summary = `Job ${data.job_id?.substring(0, 8)} agendado para retry (${data.retry_count}/${data.max_retries})`;
-  else if (type === "worker:heartbeat") summary = `Worker ${data.name} [${data.status}] CPU: ${data.cpu_percent}% Mem: ${data.memory_mb}MB`;
+  else if (type === "worker:heartbeat") {
+    summary = `Worker ${data.name} [${data.status}] CPU: ${data.cpu_percent}% Mem: ${data.memory_mb}MB`;
+    updateWorkerTelemetryCard(data.cpu_percent, data.memory_mb, `${data.name} [${data.status}]`);
+  }
   else if (type === "schedule:triggered") summary = `Cron ${data.schedule_id?.substring(0, 8)} disparou job ${data.job_id?.substring(0, 8)}`;
 
   logEvent(type, summary);
@@ -108,6 +111,30 @@ function handleLiveEvent(evt) {
     if (currentTab === "overview") fetchOverview();
     if (currentTab === "workers") fetchWorkers();
     if (currentTab === "dlq" && type === "job:failed") fetchDlq("default");
+  }
+}
+
+function updateWorkerTelemetryCard(cpuVal, memMB, detailText) {
+  const cpuElem = document.getElementById("m-cpu");
+  const cpuBar = document.getElementById("m-cpu-bar");
+  const cpuSub = document.getElementById("m-cpu-sub");
+  if (cpuElem && cpuBar) {
+    cpuElem.innerText = `${Number(cpuVal).toFixed(1)}%`;
+    cpuBar.style.width = `${Math.min(100, Math.max(0, Number(cpuVal)))}%`;
+    cpuBar.className = "metric-progress-fill" + (cpuVal > 85 ? " danger" : (cpuVal > 70 ? " warn" : ""));
+    if (cpuSub && detailText) cpuSub.innerText = detailText;
+  }
+
+  const memElem = document.getElementById("m-memory");
+  const memBar = document.getElementById("m-memory-bar");
+  const memSub = document.getElementById("m-memory-sub");
+  if (memElem && memBar) {
+    memElem.innerText = `${Number(memMB).toFixed(2)} MB`;
+    // Visual bar relative to 256MB per worker
+    const visualPct = Math.min(100, (Number(memMB) / 256) * 100);
+    memBar.style.width = `${visualPct}%`;
+    memBar.className = "metric-progress-fill" + (memMB > 500 ? " danger" : (memMB > 250 ? " warn" : ""));
+    if (memSub && detailText) memSub.innerText = detailText;
   }
 }
 
@@ -147,29 +174,11 @@ async function fetchOverview() {
     document.getElementById("m-dlq-jobs").innerText = data.total_dlq;
     document.getElementById("m-schedules").innerText = data.schedules_count;
 
-    // CPU & Memory Telemetry Updates
-    const cpuVal = data.system_cpu_percent !== undefined ? data.system_cpu_percent : 0;
-    const memVal = data.system_memory_percent !== undefined ? data.system_memory_percent : 0;
-    const memUsed = data.system_memory_used_mb !== undefined ? data.system_memory_used_mb : 0;
-    const memTotal = data.system_memory_total_mb !== undefined ? data.system_memory_total_mb : 0;
-
-    const cpuElem = document.getElementById("m-cpu");
-    const cpuBar = document.getElementById("m-cpu-bar");
-    if (cpuElem && cpuBar) {
-      cpuElem.innerText = `${cpuVal.toFixed(1)}%`;
-      cpuBar.style.width = `${Math.min(100, Math.max(0, cpuVal))}%`;
-      cpuBar.className = "metric-progress-fill" + (cpuVal > 85 ? " danger" : (cpuVal > 70 ? " warn" : ""));
-    }
-
-    const memElem = document.getElementById("m-memory");
-    const memBar = document.getElementById("m-memory-bar");
-    const memSub = document.getElementById("m-memory-sub");
-    if (memElem && memBar) {
-      memElem.innerText = `${memVal.toFixed(1)}%`;
-      memBar.style.width = `${Math.min(100, Math.max(0, memVal))}%`;
-      memBar.className = "metric-progress-fill" + (memVal > 85 ? " danger" : (memVal > 70 ? " warn" : ""));
-      if (memSub) memSub.innerText = `${memUsed} MB / ${memTotal} MB`;
-    }
+    // Worker CPU & Memory Telemetry Updates
+    const cpuVal = data.worker_cpu_percent !== undefined ? data.worker_cpu_percent : 0;
+    const memMB = data.worker_memory_mb !== undefined ? data.worker_memory_mb : 0;
+    const detail = data.worker_memory_detail || "Processos worker";
+    updateWorkerTelemetryCard(cpuVal, memMB, detail);
 
     const tbody = document.getElementById("overview-queues-table");
     if (data.queues.length === 0) {

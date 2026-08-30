@@ -108,18 +108,21 @@ def create_app(
 
         schedules = await scheduler.list_schedules()
 
-        # System Resource Telemetry
-        try:
-            cpu_percent = psutil.cpu_percent(interval=None)
-            vmem = psutil.virtual_memory()
-            memory_used_mb = round(vmem.used / (1024 * 1024), 1)
-            memory_total_mb = round(vmem.total / (1024 * 1024), 1)
-            memory_percent = vmem.percent
-        except Exception:
-            cpu_percent = 0.0
-            memory_used_mb = 0.0
-            memory_total_mb = 0.0
-            memory_percent = 0.0
+        # Worker Resource Telemetry (from heartbeats / worker process RSS)
+        if active_workers:
+            worker_cpu_percent = round(sum(w.cpu_percent for w in active_workers) / len(active_workers), 1)
+            worker_memory_mb = round(sum(w.memory_mb for w in active_workers), 2)
+            worker_memory_detail = f"{len(active_workers)} worker(s) ativo(s)"
+        else:
+            try:
+                proc = psutil.Process()
+                worker_cpu_percent = psutil.cpu_percent(interval=None)
+                worker_memory_mb = round(proc.memory_info().rss / (1024 * 1024), 2)
+                worker_memory_detail = "Processo local"
+            except Exception:
+                worker_cpu_percent = 0.0
+                worker_memory_mb = 0.0
+                worker_memory_detail = "--"
 
         return {
             "workers_count": len(active_workers),
@@ -129,10 +132,9 @@ def create_app(
             "total_delayed": total_delayed,
             "total_dlq": total_dlq,
             "schedules_count": len(schedules),
-            "system_cpu_percent": cpu_percent,
-            "system_memory_used_mb": memory_used_mb,
-            "system_memory_total_mb": memory_total_mb,
-            "system_memory_percent": memory_percent,
+            "worker_cpu_percent": worker_cpu_percent,
+            "worker_memory_mb": worker_memory_mb,
+            "worker_memory_detail": worker_memory_detail,
             "queues": queue_summaries,
         }
 

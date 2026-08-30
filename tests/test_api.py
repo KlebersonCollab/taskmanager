@@ -33,9 +33,9 @@ async def test_api_overview_and_queues(app_setup):
         assert "workers_count" in data
         assert "queues" in data
         assert data["total_pending"] == 0
-        assert "system_cpu_percent" in data
-        assert "system_memory_percent" in data
-        assert "system_memory_used_mb" in data
+        assert "worker_cpu_percent" in data
+        assert "worker_memory_mb" in data
+        assert "worker_memory_detail" in data
 
         res_queues = await client.get("/api/queues")
         assert res_queues.status_code == 200
