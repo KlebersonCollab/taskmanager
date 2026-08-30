@@ -204,7 +204,7 @@ def main() -> None:
     )
     worker_parser.add_argument("-n", "--name", default=None, help="Custom worker name")
     worker_parser.add_argument("--max-memory-mb", type=float, default=None, help="Max RSS memory (MB) before backpressure")
-    worker_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU % before backpressure")
+    worker_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU percentage before backpressure")
     worker_parser.add_argument("--redis-url", default=None, help="Redis connection URL")
     worker_parser.add_argument("--in-memory", action="store_true", help="Force in-memory Redis")
     worker_parser.add_argument(
@@ -228,7 +228,7 @@ def main() -> None:
     dev_parser.add_argument("-q", "--queues", default="default", help="Comma-separated queue names")
     dev_parser.add_argument("-c", "--concurrency", type=int, default=5, help="Worker concurrency")
     dev_parser.add_argument("--max-memory-mb", type=float, default=None, help="Max RSS memory (MB) before backpressure")
-    dev_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU % before backpressure")
+    dev_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU percentage before backpressure")
     dev_parser.add_argument("--redis-url", default=None, help="Redis connection URL")
     dev_parser.add_argument("--in-memory", action="store_true", help="Force in-memory Redis")
     dev_parser.add_argument(
