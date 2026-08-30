@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskManager Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <span>TaskManager</span>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="overview">
+          <span>Visão Geral</span>
+        </button>
+        <button class="nav-tab" data-tab="workers">
+          <span>Workers</span>
+        </button>
+        <button class="nav-tab" data-tab="queues">
+          <span>Filas & Jobs</span>
+        </button>
+        <button class="nav-tab" data-tab="schedules">
+          <span>Cron & Agendamentos</span>
+        </button>
+        <button class="nav-tab" data-tab="dlq">
+          <span>Dead Letter (DLQ)</span>
+        </button>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="ws-status">
+          <span class="status-dot" id="wsDot"></span>
+          <span id="wsText">Conectando...</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="openEnqueueModal()">+ Nova Tarefa</button>
+        <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Novo Cron</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- 1. Overview Tab -->
+      <section id="tab-overview" class="tab-pane active">
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">Workers Ativos</div>
+            <div class="metric-value" id="m-workers">0</div>
+            <div class="metric-sub" id="m-workers-sub">0 total registrados</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Jobs em Execução</div>
+            <div class="metric-value" id="m-active-jobs">0</div>
+            <div class="metric-sub">Processando agora</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Jobs Pendentes</div>
+            <div class="metric-value" id="m-pending-jobs">0</div>
+            <div class="metric-sub">Na fila FIFO</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Jobs Agendados</div>
+            <div class="metric-value" id="m-delayed-jobs">0</div>
+            <div class="metric-sub">Aguardando timestamp</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Dead Letter (DLQ)</div>
+            <div class="metric-value" id="m-dlq-jobs" style="color: var(--semantic-error);">0</div>
+            <div class="metric-sub">Falhas esgotadas</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Crons Ativos</div>
+            <div class="metric-value" id="m-schedules">0</div>
+            <div class="metric-sub">Rotinas agendadas</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Status das Filas</h2>
+          </div>
+          <div class="card-body table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fila</th>
+                  <th>Pendentes</th>
+                  <th>Agendados</th>
+                  <th>DLQ</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="overview-queues-table">
+                <tr><td colspan="5" style="text-align: center; color: var(--ink-subtle);">Carregando filas...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Live Telemetry & Event Stream (WebSockets)</h2>
+          </div>
+          <div class="card-body">
+            <div class="event-log-container" id="live-event-stream">
+              <div class="event-line">
+                <span class="event-time">--:--:--</span>
+                <span class="event-type">SYSTEM</span>
+                <span class="event-msg">Aguardando eventos do broker Redis...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Workers Tab -->
+      <section id="tab-workers" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Workers Conectados</h2>
+            <button class="btn btn-secondary btn-sm" onclick="fetchWorkers()">Atualizar</button>
+          </div>
+          <div class="card-body">
+            <div class="workers-grid" id="workers-container">
+              <div style="color: var(--ink-subtle);">Nenhum worker ativo encontrado.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Queues & Jobs Tab -->
+      <section id="tab-queues" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Explorador de Tarefas Registradas</h2>
+          </div>
+          <div class="card-body table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome da Tarefa</th>
+                  <th>Fila Padrão</th>
+                  <th>Max Retries</th>
+                  <th>Backoff (s)</th>
+                  <th>Timeout (s)</th>
+                  <th>Tipo</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tasks-table">
+                <tr><td colspan="7" style="text-align: center; color: var(--ink-subtle);">Nenhuma tarefa registrada.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Schedules / Cron Tab -->
+      <section id="tab-schedules" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Agendamentos & Cron Jobs</h2>
+            <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Adicionar Agendamento</button>
+          </div>
+          <div class="card-body table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Tarefa</th>
+                  <th>Fila</th>
+                  <th>Expressão / Intervalo</th>
+                  <th>Status</th>
+                  <th>Próxima Execução</th>
+                  <th>Total Runs</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="schedules-table">
+                <tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhum cron cadastrado.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. DLQ Tab -->
+      <section id="tab-dlq" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Dead Letter Queue (DLQ)</h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-danger btn-sm" onclick="purgeDlq('default')">Limpar DLQ</button>
+              <button class="btn btn-secondary btn-sm" onclick="fetchDlq('default')">Atualizar</button>
+            </div>
+          </div>
+          <div class="card-body table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>Tarefa</th>
+                  <th>Fila</th>
+                  <th>Erro</th>
+                  <th>Tentativas</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="dlq-table">
+                <tr><td colspan="6" style="text-align: center; color: var(--ink-subtle);">Nenhum job na DLQ.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal Enqueue Task -->
+    <div class="modal-backdrop" id="modal-enqueue">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Enfileirar Nova Tarefa</h3>
+          <button class="modal-close" onclick="closeModal('modal-enqueue')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-enqueue" onsubmit="handleEnqueueSubmit(event)">
+            <div class="form-group">
+              <label class="form-label">Nome da Tarefa</label>
+              <input type="text" class="form-input" id="enq-task-name" placeholder="ex: send_email" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fila (Queue)</label>
+              <input type="text" class="form-input" id="enq-queue" value="default" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Argumentos JSON (Lista / Dicionário)</label>
+              <textarea class="form-textarea" id="enq-args" placeholder='{"args": ["teste@exemplo.com"], "kwargs": {"subject": "Olá"}}'></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delay (Segundos, opcional)</label>
+              <input type="number" class="form-input" id="enq-delay" placeholder="0" min="0" />
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="closeModal('modal-enqueue')">Cancelar</button>
+              <button type="submit" class="btn btn-primary">Enfileirar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Create Schedule -->
+    <div class="modal-backdrop" id="modal-schedule">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Cadastrar Cron / Agendamento</h3>
+          <button class="modal-close" onclick="closeModal('modal-schedule')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-schedule" onsubmit="handleScheduleSubmit(event)">
+            <div class="form-group">
+              <label class="form-label">Nome da Rotina</label>
+              <input type="text" class="form-input" id="sched-name" placeholder="ex: Relatório Diário" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tarefa (Task Name)</label>
+              <input type="text" class="form-input" id="sched-task" placeholder="ex: generate_report" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tipo de Agendamento</label>
+              <select class="form-select" id="sched-type" onchange="toggleScheduleTypeFields()">
+                <option value="cron">Expressão Cron (ex: */5 * * * *)</option>
+                <option value="interval">Intervalo em Segundos</option>
+              </select>
+            </div>
+            <div class="form-group" id="group-cron">
+              <label class="form-label">Expressão Cron (5 partes: min hora dia mês dia-semana)</label>
+              <input type="text" class="form-input" id="sched-cron" placeholder="0 * * * *" />
+            </div>
+            <div class="form-group" id="group-interval" style="display: none;">
+              <label class="form-label">Intervalo (Segundos)</label>
+              <input type="number" class="form-input" id="sched-interval" placeholder="60" min="1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fila (Queue)</label>
+              <input type="text" class="form-input" id="sched-queue" value="default" />
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="closeModal('modal-schedule')">Cancelar</button>
+              <button type="submit" class="btn btn-primary">Salvar Agendamento</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Job Detail -->
+    <div class="modal-backdrop" id="modal-job-detail">
+      <div class="modal" style="max-width: 650px;">
+        <div class="modal-header">
+          <h3 id="job-detail-title">Detalhes do Job</h3>
+          <button class="modal-close" onclick="closeModal('modal-job-detail')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <pre id="job-detail-content">Carregando...</pre>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-job-detail')">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

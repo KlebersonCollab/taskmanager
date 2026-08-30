@@ -1,0 +1,99 @@
+import asyncio
+
+import pytest
+
+from taskmanager.core.broker import RedisBroker
+from taskmanager.core.job import Job, JobStatus
+from taskmanager.core.task import TaskRegistry, task
+from taskmanager.worker.heartbeat import HeartbeatManager
+from taskmanager.worker.worker import Worker
+
+
+@pytest.fixture
+def test_setup(fake_redis):
+    broker = RedisBroker(fake_redis, prefix="test_worker_tm")
+    reg = TaskRegistry()
+    reg.set_broker(broker)
+    return broker, reg
+
+
+@pytest.mark.asyncio
+async def test_worker_execute_async_and_sync_task(test_setup):
+    broker, reg = test_setup
+
+    @task(name="sync_greet", broker=broker)
+    def sync_greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    @task(name="async_multiply", broker=broker)
+    async def async_multiply(x: int, y: int) -> int:
+        await asyncio.sleep(0.01)
+        return x * y
+
+    reg.register(sync_greet)
+    reg.register(async_multiply)
+
+    # Enqueue jobs
+    job1 = await sync_greet.delay("Alice")
+    job2 = await async_multiply.delay(4, 5)
+
+    worker = Worker(queues=["default"], concurrency=2, broker=broker, task_registry=reg)
+    worker_task = asyncio.create_task(worker.start())
+
+    # Wait for execution
+    await asyncio.sleep(0.1)
+    await worker.stop()
+    worker_task.cancel()
+
+    res1 = await broker.get_job(job1.id)
+    assert res1.status == JobStatus.COMPLETED
+    assert res1.result == "Hello, Alice!"
+
+    res2 = await broker.get_job(job2.id)
+    assert res2.status == JobStatus.COMPLETED
+    assert res2.result == 20
+
+
+@pytest.mark.asyncio
+async def test_worker_timeout_handling(test_setup):
+    broker, reg = test_setup
+
+    @task(name="slow_task", timeout=0.05, max_retries=0, broker=broker)
+    async def slow_task():
+        await asyncio.sleep(0.5)
+        return "done"
+
+    reg.register(slow_task)
+    job = await slow_task.delay()
+
+    worker = Worker(queues=["default"], concurrency=1, broker=broker, task_registry=reg)
+    worker_task = asyncio.create_task(worker.start())
+
+    await asyncio.sleep(0.15)
+    await worker.stop()
+    worker_task.cancel()
+
+    res = await broker.get_job(job.id)
+    assert res.status == JobStatus.FAILED
+    assert "timed out" in res.error.lower()
+
+
+@pytest.mark.asyncio
+async def test_worker_heartbeat_and_orphan_reaper(test_setup):
+    broker, _ = test_setup
+
+    # Manually simulate an active job on a dead worker
+    job = Job(
+        task_name="dummy", queue="default", status=JobStatus.ACTIVE, worker_id="worker-dead-1"
+    )
+    await broker.save_job(job)
+    await broker.redis.sadd(broker._key_active("worker-dead-1"), job.id)
+    await broker.redis.sadd(broker._key_workers(), "worker-dead-1")
+
+    # Worker info key does not exist (simulating expired TTL)
+    reaped = await HeartbeatManager.reap_orphans(broker)
+    assert reaped == 1
+
+    reaped_job = await broker.get_job(job.id)
+    assert reaped_job.status == JobStatus.PENDING
+    assert reaped_job.worker_id is None
