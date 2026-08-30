@@ -84,6 +84,8 @@ class Worker:
         """Starts the worker processing loop, heartbeat manager, and control listener."""
         self._running = True
         self.info.status = "idle"
+        for q in self.queues:
+            await self.broker.redis.sadd(self.broker._key_queues(), q)
         await self.heartbeat.start()
         self._control_task = asyncio.create_task(self._listen_control())
         limits_str = ""

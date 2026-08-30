@@ -41,6 +41,10 @@ class HeartbeatManager:
 
     async def start(self) -> None:
         self._running = True
+        try:
+            await self.send_heartbeat()
+        except Exception as err:
+            logger.warning(f"Initial heartbeat error: {err}")
         self._task = asyncio.create_task(self._heartbeat_loop())
 
     async def stop(self) -> None:
@@ -94,31 +98,25 @@ class HeartbeatManager:
 
     @classmethod
     async def get_all_workers(cls, broker: RedisBroker) -> list[WorkerInfo]:
-        """Returns all currently registered workers and detects dead ones."""
+        """Returns all currently registered workers and cleans up expired ones."""
         worker_ids = await broker.redis.smembers(broker._key_workers())
         workers: list[WorkerInfo] = []
         now = time.time()
 
-        for wid in worker_ids:
+        for wid in list(worker_ids):
             key = broker._key_worker(wid)
             data = await broker.redis.get(key)
             if data:
-                info = WorkerInfo.model_validate_json(data)
-                if (now - info.last_heartbeat) > settings.worker_heartbeat_ttl:
-                    info.status = "dead"
-                workers.append(info)
+                try:
+                    info = WorkerInfo.model_validate_json(data)
+                    if (now - info.last_heartbeat) > settings.worker_heartbeat_ttl:
+                        info.status = "dead"
+                    workers.append(info)
+                except Exception:
+                    pass
             else:
-                # Expired from TTL -> marked as dead
-                workers.append(
-                    WorkerInfo(
-                        id=wid,
-                        name=f"Worker-{wid[:6]}",
-                        queues=[],
-                        concurrency=0,
-                        status="dead",
-                        last_heartbeat=0,
-                    )
-                )
+                # Expired from TTL -> Clean up from workers set
+                await broker.redis.srem(broker._key_workers(), wid)
         return workers
 
     @classmethod

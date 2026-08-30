@@ -105,6 +105,11 @@ def create_app(
     @app.get("/api/overview")
     async def get_overview():
         """Returns consolidated metrics for dashboard counters."""
+        for t_name in task_reg.list_tasks():
+            t = task_reg.get(t_name)
+            if t and t.queue:
+                await broker.redis.sadd(broker._key_queues(), t.queue)
+
         queues = await broker.get_all_queues()
         queue_summaries = []
         total_pending = 0
@@ -119,7 +124,7 @@ def create_app(
             total_dlq += m["dlq"]
 
         workers = await HeartbeatManager.get_all_workers(broker)
-        active_workers = [w for w in workers if w.status in ["idle", "busy"]]
+        active_workers = [w for w in workers if w.status in ["idle", "busy", "paused", "throttled"]]
         total_active_jobs = sum(w.active_jobs_count for w in active_workers)
 
         schedules = await scheduler.list_schedules()

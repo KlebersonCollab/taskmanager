@@ -55,10 +55,10 @@ document.addEventListener("DOMContentLoaded", () => {
   connectWebSocket();
   refreshCurrentTab();
 
-  // Polling fallback every 6 seconds
+  // Polling fallback every 3 seconds for continuous live refresh
   setInterval(() => {
     refreshCurrentTab(true);
-  }, 6000);
+  }, 3000);
 });
 
 // --- Tab Management ---
@@ -89,7 +89,7 @@ function refreshCurrentTab(isBackground = false) {
   if (currentTab === "schedules") fetchSchedules();
   if (currentTab === "dlq") fetchDlq("default");
   if (currentTab === "history") {
-    fetchHistory();
+    if (!isBackground) fetchHistory();
     fetchObservabilityMetrics();
   }
 }
@@ -140,28 +140,32 @@ function handleLiveEvent(evt) {
   const data = evt.data || {};
   let summary = JSON.stringify(data);
 
-  if (type === "job:enqueued") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task}) enfileirado na fila [${data.queue}]`;
-  else if (type === "job:active") summary = `Worker ${data.worker_id?.substring(0, 8)} executando job ${data.job_id?.substring(0, 8)} (${data.task})`;
-  else if (type === "job:completed") summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${data.duration?.toFixed(2)}s)`;
-  else if (type === "job:failed") summary = `Job ${data.job_id?.substring(0, 8)} FALHOU -> DLQ: ${data.error}`;
+  if (type === "job:enqueued") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) enfileirado na fila [${data.queue}]`;
+  else if (type === "job:delayed") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) agendado com delay na fila [${data.queue}]`;
+  else if (type === "job:active") summary = `Worker ${data.worker_id?.substring(0, 8)} executando job ${data.job_id?.substring(0, 8)} (${data.task || ""})`;
+  else if (type === "job:completed") summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${data.duration !== undefined ? data.duration.toFixed(2) : "0.00"}s)`;
+  else if (type === "job:failed") summary = `Job ${data.job_id?.substring(0, 8)} FALHOU -> DLQ [${data.queue}]: ${data.error || "Erro"}`;
   else if (type === "job:retrying") summary = `Job ${data.job_id?.substring(0, 8)} agendado para retry (${data.retry_count}/${data.max_retries})`;
+  else if (type === "job:cancelled") summary = `Job ${data.job_id?.substring(0, 8)} cancelado na fila [${data.queue}]`;
+  else if (type === "job:replayed") summary = `Job ${data.job_id?.substring(0, 8)} reenfileirado da DLQ para a fila [${data.queue}]`;
   else if (type === "worker:heartbeat") {
     summary = `Worker ${data.name} [${data.status}] CPU: ${data.cpu_percent}% Mem: ${data.memory_mb}MB`;
     updateWorkerTelemetryCard(data.cpu_percent, data.memory_mb, `${data.name} [${data.status}]`);
   }
   else if (type === "schedule:triggered") summary = `Cron ${data.schedule_id?.substring(0, 8)} disparou job ${data.job_id?.substring(0, 8)}`;
+  else if (type === "schedule:created" || type === "schedule:updated" || type === "schedule:deleted") summary = `Rotina agendada atualizada: ${type}`;
+  else if (type === "worker:spawned" || type === "worker:stopped") summary = `Worker status alterado: ${type}`;
 
   logEvent(type, summary);
 
-  // Auto refresh overview metrics on significant events
-  if (["job:enqueued", "job:active", "job:completed", "job:failed", "job:retrying", "schedule:triggered"].includes(type)) {
-    if (currentTab === "overview") fetchOverview();
-    if (currentTab === "workers") fetchWorkers();
-    if (currentTab === "dlq" && type === "job:failed") fetchDlq("default");
-    if (currentTab === "history") {
-      fetchHistory();
-      fetchObservabilityMetrics();
-    }
+  // Instantly refresh current tab state in real time for any relevant event
+  if (currentTab === "overview") fetchOverview();
+  if (currentTab === "workers") fetchWorkers();
+  if (currentTab === "schedules" && type.startsWith("schedule:")) fetchSchedules();
+  if (currentTab === "dlq" && (type === "job:failed" || type === "job:replayed")) fetchDlq("default");
+  if (currentTab === "history" && type.startsWith("job:")) {
+    fetchHistory();
+    fetchObservabilityMetrics();
   }
 }
 
@@ -170,9 +174,10 @@ function updateWorkerTelemetryCard(cpuVal, memMB, detailText) {
   const cpuBar = document.getElementById("m-cpu-bar");
   const cpuSub = document.getElementById("m-cpu-sub");
   if (cpuElem && cpuBar) {
-    cpuElem.innerText = `${Number(cpuVal).toFixed(1)}%`;
-    cpuBar.style.width = `${Math.min(100, Math.max(0, Number(cpuVal)))}%`;
-    cpuBar.className = "metric-progress-fill" + (cpuVal > 85 ? " danger" : (cpuVal > 70 ? " warn" : ""));
+    const numCpu = Number(cpuVal) || 0;
+    cpuElem.innerText = `${numCpu.toFixed(1)}%`;
+    cpuBar.style.width = `${Math.min(100, Math.max(0, numCpu))}%`;
+    cpuBar.className = "metric-progress-fill" + (numCpu > 85 ? " danger" : (numCpu > 70 ? " warn" : ""));
     if (cpuSub && detailText) cpuSub.innerText = detailText;
   }
 
@@ -180,11 +185,12 @@ function updateWorkerTelemetryCard(cpuVal, memMB, detailText) {
   const memBar = document.getElementById("m-memory-bar");
   const memSub = document.getElementById("m-memory-sub");
   if (memElem && memBar) {
-    memElem.innerText = `${Number(memMB).toFixed(2)} MB`;
+    const numMem = Number(memMB) || 0;
+    memElem.innerText = `${numMem.toFixed(1)} MB`;
     // Visual bar relative to 256MB per worker
-    const visualPct = Math.min(100, (Number(memMB) / 256) * 100);
+    const visualPct = Math.min(100, (numMem / 256) * 100);
     memBar.style.width = `${visualPct}%`;
-    memBar.className = "metric-progress-fill" + (memMB > 500 ? " danger" : (memMB > 250 ? " warn" : ""));
+    memBar.className = "metric-progress-fill" + (numMem > 500 ? " danger" : (numMem > 250 ? " warn" : ""));
     if (memSub && detailText) memSub.innerText = detailText;
   }
 }
@@ -217,13 +223,20 @@ async function fetchOverview() {
     const res = await fetch(`${API_BASE}/api/overview`);
     const data = await res.json();
 
-    document.getElementById("m-workers").innerText = data.workers_count;
-    document.getElementById("m-workers-sub").innerText = `${data.total_workers} total registrados`;
-    document.getElementById("m-active-jobs").innerText = data.active_jobs;
-    document.getElementById("m-pending-jobs").innerText = data.total_pending;
-    document.getElementById("m-delayed-jobs").innerText = data.total_delayed;
-    document.getElementById("m-dlq-jobs").innerText = data.total_dlq;
-    document.getElementById("m-schedules").innerText = data.schedules_count;
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = val !== undefined && val !== null ? val : 0;
+    };
+
+    setText("m-workers", data.workers_count);
+    const workersSub = document.getElementById("m-workers-sub");
+    if (workersSub) workersSub.innerText = `${data.total_workers || data.workers_count || 0} total registrados`;
+
+    setText("m-active-jobs", data.active_jobs);
+    setText("m-pending-jobs", data.total_pending);
+    setText("m-delayed-jobs", data.total_delayed);
+    setText("m-dlq-jobs", data.total_dlq);
+    setText("m-schedules", data.schedules_count);
 
     // Worker CPU & Memory Telemetry Updates
     const cpuVal = data.worker_cpu_percent !== undefined ? data.worker_cpu_percent : 0;
@@ -232,7 +245,8 @@ async function fetchOverview() {
     updateWorkerTelemetryCard(cpuVal, memMB, detail);
 
     const tbody = document.getElementById("overview-queues-table");
-    if (data.queues.length === 0) {
+    if (!tbody) return;
+    if (!data.queues || data.queues.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--ink-subtle);">Nenhuma fila ativa.</td></tr>`;
       return;
     }
@@ -240,11 +254,14 @@ async function fetchOverview() {
     tbody.innerHTML = data.queues.map(q => `
       <tr>
         <td><strong>${escapeHtml(q.queue)}</strong></td>
-        <td><span class="badge badge-pending">${q.pending}</span></td>
-        <td><span class="badge badge-delayed">${q.delayed}</span></td>
-        <td><span class="badge badge-failed">${q.dlq}</span></td>
+        <td><span class="badge ${q.pending > 0 ? "badge-active" : "badge-pending"}">${q.pending}</span></td>
+        <td><span class="badge ${q.delayed > 0 ? "badge-delayed" : "badge-pending"}">${q.delayed}</span></td>
+        <td><span class="badge ${q.dlq > 0 ? "badge-failed" : "badge-pending"}">${q.dlq}</span></td>
         <td>
-          <button class="btn btn-secondary btn-sm" onclick="switchTab('queues')">Ver Tarefas</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-secondary btn-sm" onclick="quickEnqueueTask('', '${escapeHtml(q.queue)}')">⚡ Enfileirar</button>
+            <button class="btn btn-secondary btn-sm" onclick="switchTab('queues')">Ver Tarefas</button>
+          </div>
         </td>
       </tr>
     `).join("");
