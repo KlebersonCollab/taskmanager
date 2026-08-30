@@ -642,6 +642,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
+    { name = "fakeredis" },
     { name = "fastapi" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -662,6 +663,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "croniter", specifier = ">=2.0.0" },
+    { name = "fakeredis", specifier = ">=2.21.0" },
     { name = "fakeredis", marker = "extra == 'dev'", specifier = ">=2.21.0" },
     { name = "fastapi", specifier = ">=0.110.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
