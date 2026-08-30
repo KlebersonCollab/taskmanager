@@ -321,26 +321,42 @@ function handleTaskSelectChange(prefix) {
   const queueInput = document.getElementById(`${prefix}-queue`);
   const argsTextarea = document.getElementById(`${prefix}-args`);
   const helpDiv = document.getElementById(`${prefix}-args-help`);
+  if (!select) return;
+
   const taskName = select.value;
 
   if (taskName === "__custom__") {
-    customGroup.style.display = "block";
-  } else {
-    customGroup.style.display = "none";
+    if (customGroup) customGroup.style.display = "block";
+    if (argsTextarea) argsTextarea.value = '{\n  "args": [],\n  "kwargs": {}\n}';
+    if (helpDiv) helpDiv.innerText = "💡 Informe os argumentos JSON da tarefa customizada.";
+    return;
   }
 
-  // Pre-fill smart defaults
-  if (taskName === "system.run_command") {
-    if (argsTextarea) argsTextarea.value = '{\n  "kwargs": {\n    "command": "python scripts/meu_script.py"\n  }\n}';
-    if (helpDiv) helpDiv.innerText = "💡 Informe o comando shell ou script a ser executado pelo worker.";
-  } else if (taskName === "system.run_script") {
-    if (argsTextarea) argsTextarea.value = '{\n  "kwargs": {\n    "script_path": "meu_script.py",\n    "args": []\n  }\n}';
-    if (helpDiv) helpDiv.innerText = "💡 Informe o caminho do script Python relativo à raiz do projeto.";
-  } else {
-    const taskObj = cachedTasks.find(t => t.name === taskName);
-    if (taskObj && queueInput) {
-      queueInput.value = taskObj.queue || "default";
+  if (customGroup) customGroup.style.display = "none";
+
+  // Look up task metadata in cachedTasks
+  const taskObj = cachedTasks.find(t => t.name === taskName);
+  if (taskObj) {
+    if (queueInput) queueInput.value = taskObj.queue || "default";
+
+    // Set formatted sample payload with real parameters & types
+    const samplePayload = {
+      args: [],
+      kwargs: taskObj.sample_kwargs || {}
+    };
+    if (argsTextarea) {
+      argsTextarea.value = JSON.stringify(samplePayload, null, 2);
     }
+
+    // Show function signature and docstring helper
+    if (helpDiv) {
+      const paramsList = (taskObj.parameters || []).map(p => {
+        return `${p.name}${p.has_default ? `=${JSON.stringify(p.default)}` : ''}`;
+      }).join(", ");
+      const doc = taskObj.docstring ? ` — ${taskObj.docstring.split('\n')[0]}` : '';
+      helpDiv.innerText = `💡 ${taskName}(${paramsList})${doc}`;
+    }
+  } else {
     if (argsTextarea && !argsTextarea.value.trim()) {
       argsTextarea.value = '{\n  "args": [],\n  "kwargs": {}\n}';
     }
@@ -495,14 +511,17 @@ async function showJobDetails(jobId) {
   }
 }
 
-function quickEnqueueTask(taskName, queue) {
-  openEnqueueModal();
+async function quickEnqueueTask(taskName, queue) {
+  if (cachedTasks.length === 0) await fetchTasks();
+  openModal("modal-enqueue");
   const select = document.getElementById("enq-task-select");
   if (select) {
     select.value = taskName;
     handleTaskSelectChange("enq");
   }
-  document.getElementById("enq-queue").value = queue;
+  if (queue) {
+    document.getElementById("enq-queue").value = queue;
+  }
 }
 
 // --- Modals & Forms ---

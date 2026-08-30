@@ -157,6 +157,7 @@ def create_app(
         for name in task_reg.list_tasks():
             t = task_reg.get(name)
             if t:
+                sig_info = t.get_signature_info()
                 tasks.append(
                     {
                         "name": t.name,
@@ -165,6 +166,9 @@ def create_app(
                         "retry_backoff": t.retry_backoff,
                         "timeout": t.timeout,
                         "is_async": t.is_async,
+                        "parameters": sig_info["parameters"],
+                        "sample_kwargs": sig_info["sample_kwargs"],
+                        "docstring": sig_info["docstring"],
                     }
                 )
         return tasks

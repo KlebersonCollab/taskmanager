@@ -62,6 +62,68 @@ class Task:
         self._broker = broker
         self.is_async = inspect.iscoroutinefunction(func)
 
+    def get_signature_info(self) -> dict[str, Any]:
+        """Extracts parameters, types, defaults, and generates a sample payload."""
+        try:
+            sig = inspect.signature(self.func)
+            params = []
+            sample_kwargs: dict[str, Any] = {}
+            for param in sig.parameters.values():
+                has_default = param.default is not inspect.Parameter.empty
+                default_val = param.default if has_default else None
+                ann_str = "Any" if param.annotation is inspect.Parameter.empty else str(param.annotation)
+
+                params.append(
+                    {
+                        "name": param.name,
+                        "has_default": has_default,
+                        "default": default_val,
+                        "annotation": ann_str,
+                    }
+                )
+
+                # Heuristics for realistic smart sample values
+                if has_default and default_val is not None:
+                    sample_kwargs[param.name] = default_val
+                else:
+                    ann_lower = ann_str.lower()
+                    p_name = param.name.lower()
+                    if "int" in ann_lower or "year" in p_name or "month" in p_name or "count" in p_name:
+                        sample_kwargs[param.name] = 2026 if "year" in p_name else (8 if "month" in p_name else 1)
+                    elif "float" in ann_lower:
+                        sample_kwargs[param.name] = 10.0
+                    elif "bool" in ann_lower or "dry_run" in p_name or "force" in p_name:
+                        sample_kwargs[param.name] = False
+                    elif "list" in ann_lower:
+                        sample_kwargs[param.name] = []
+                    elif "dict" in ann_lower:
+                        sample_kwargs[param.name] = {}
+                    elif "email" in p_name:
+                        sample_kwargs[param.name] = "cliente@exemplo.com"
+                    elif "name" in p_name or "nome" in p_name:
+                        sample_kwargs[param.name] = "Carlos Silva"
+                    elif "order" in p_name or "id" in p_name:
+                        sample_kwargs[param.name] = "PED-12345"
+                    elif "command" in p_name:
+                        sample_kwargs[param.name] = "python scripts/backup_database.py --compress"
+                    elif "path" in p_name:
+                        sample_kwargs[param.name] = "scripts/backup_database.py"
+                    else:
+                        sample_kwargs[param.name] = f"valor_{param.name}"
+
+            doc = inspect.getdoc(self.func) or ""
+            return {
+                "parameters": params,
+                "sample_kwargs": sample_kwargs,
+                "docstring": doc,
+            }
+        except Exception:
+            return {
+                "parameters": [],
+                "sample_kwargs": {},
+                "docstring": "",
+            }
+
     @property
     def broker(self) -> RedisBroker:
         return self._broker or registry.get_broker()
