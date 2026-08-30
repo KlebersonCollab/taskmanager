@@ -94,6 +94,10 @@ def create_app(
     app.state.scheduler = scheduler
     app.state.event_manager = event_manager
 
+    @app.exception_handler(ValueError)
+    async def value_error_handler(request, exc: ValueError):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
     spawned_workers: dict[str, tuple[Worker, asyncio.Task[Any]]] = {}
 
     # --- REST Endpoints ---
@@ -311,13 +315,18 @@ def create_app(
 
     @app.post("/api/schedules")
     async def create_schedule(req: CreateScheduleRequest):
+        cron_expr = req.cron_expression.strip() if req.cron_expression else None
+        if req.schedule_type == "cron" and not cron_expr:
+            cron_expr = "0 * * * *"
+        interval_sec = req.interval_seconds if req.interval_seconds and req.interval_seconds > 0 else (60.0 if req.schedule_type == "interval" else None)
+
         sched = Schedule(
             name=req.name,
             task_name=req.task_name,
             queue=req.queue,
             schedule_type=req.schedule_type,
-            cron_expression=req.cron_expression,
-            interval_seconds=req.interval_seconds,
+            cron_expression=cron_expr,
+            interval_seconds=interval_sec,
             args=req.args,
             kwargs=req.kwargs,
             enabled=req.enabled,
@@ -338,12 +347,17 @@ def create_app(
         if not existing:
             raise HTTPException(status_code=404, detail="Schedule not found")
 
+        cron_expr = req.cron_expression.strip() if req.cron_expression else None
+        if req.schedule_type == "cron" and not cron_expr:
+            cron_expr = "0 * * * *"
+        interval_sec = req.interval_seconds if req.interval_seconds and req.interval_seconds > 0 else (60.0 if req.schedule_type == "interval" else None)
+
         existing.name = req.name
         existing.task_name = req.task_name
         existing.queue = req.queue
         existing.schedule_type = req.schedule_type
-        existing.cron_expression = req.cron_expression
-        existing.interval_seconds = req.interval_seconds
+        existing.cron_expression = cron_expr
+        existing.interval_seconds = interval_sec
         existing.args = req.args
         existing.kwargs = req.kwargs
         existing.enabled = req.enabled

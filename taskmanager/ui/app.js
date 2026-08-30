@@ -383,7 +383,10 @@ async function fetchTasks() {
         <td>${t.timeout ? `${t.timeout}s` : "Sem limite"}</td>
         <td><span class="badge ${t.is_async ? 'badge-active' : 'badge-pending'}">${t.is_async ? 'Async Coroutine' : 'Sync Function'}</span></td>
         <td>
-          <button class="btn btn-secondary btn-sm" onclick="quickEnqueueTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⚡ Enfileirar</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-secondary btn-sm" onclick="quickEnqueueTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⚡ Enfileirar</button>
+            <button class="btn btn-secondary btn-sm" onclick="quickScheduleTask('${escapeHtml(t.name)}', '${escapeHtml(t.queue)}')">⏰ Agendar</button>
+          </div>
         </td>
       </tr>
     `).join("");
@@ -645,9 +648,32 @@ async function openEnqueueModal() {
   handleTaskSelectChange("enq");
 }
 
-async function openScheduleModal() {
+async function quickScheduleTask(taskName, queue) {
   if (cachedTasks.length === 0) await fetchTasks();
+  openScheduleModal(taskName);
+  if (queue) {
+    const qInput = document.getElementById("sched-queue");
+    if (qInput) qInput.value = queue;
+  }
+}
+
+async function openScheduleModal(taskName = null) {
+  if (cachedTasks.length === 0) await fetchTasks();
+  const nameInput = document.getElementById("sched-name");
+  const select = document.getElementById("sched-task-select");
+  const cronInput = document.getElementById("sched-cron");
+  const intervalInput = document.getElementById("sched-interval");
+
+  if (cronInput && !cronInput.value) cronInput.value = "*/5 * * * *";
+  if (intervalInput && !intervalInput.value) intervalInput.value = "60";
+
   openModal("modal-schedule");
+  if (taskName && select) {
+    select.value = taskName;
+    if (nameInput) {
+      nameInput.value = `Rotina - ${taskName}`;
+    }
+  }
   handleTaskSelectChange("sched");
 }
 
@@ -705,8 +731,14 @@ async function handleEnqueueSubmit(e) {
       fetchOverview();
       alert(`Tarefa '${taskName}' enfileirada com sucesso!`);
     } else {
-      const errData = await res.json();
-      alert("Erro ao enfileirar: " + (errData.detail || "Erro desconhecido"));
+      let errMsg = "Erro desconhecido";
+      try {
+        const errData = await res.json();
+        errMsg = errData.detail || errData.message || JSON.stringify(errData);
+      } catch {
+        errMsg = await res.text();
+      }
+      alert("Erro ao enfileirar: " + errMsg);
     }
   } catch (err) {
     alert("Erro na requisição: " + err.message);
@@ -727,9 +759,13 @@ async function handleScheduleSubmit(e) {
 
   const scheduleType = document.getElementById("sched-type").value;
   const queue = document.getElementById("sched-queue").value.trim() || "default";
-  const cronExpr = document.getElementById("sched-cron").value.trim();
-  const intervalSec = parseFloat(document.getElementById("sched-interval").value) || 0;
+  let cronExpr = document.getElementById("sched-cron").value.trim();
+  const intervalSec = parseFloat(document.getElementById("sched-interval").value) || 60;
   const argsRaw = document.getElementById("sched-args").value.trim();
+
+  if (scheduleType === "cron" && !cronExpr) {
+    cronExpr = "*/5 * * * *";
+  }
 
   let parsedArgs = { args: [], kwargs: {} };
   if (argsRaw) {
@@ -772,8 +808,14 @@ async function handleScheduleSubmit(e) {
       fetchOverview();
       alert(`Cron '${name}' cadastrado com sucesso!`);
     } else {
-      const errData = await res.json();
-      alert("Erro ao criar agendamento: " + (errData.detail || "Erro desconhecido"));
+      let errMsg = "Erro desconhecido";
+      try {
+        const errData = await res.json();
+        errMsg = errData.detail || errData.message || JSON.stringify(errData);
+      } catch {
+        errMsg = await res.text();
+      }
+      alert("Erro ao criar agendamento: " + errMsg);
     }
   } catch (err) {
     alert("Erro na requisição: " + err.message);

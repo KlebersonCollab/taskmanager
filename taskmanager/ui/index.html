@@ -398,11 +398,11 @@
             </div>
             <div class="form-group" id="group-cron">
               <label class="form-label">Expressão Cron (5 partes: min hora dia mês dia-semana)</label>
-              <input type="text" class="form-input" id="sched-cron" placeholder="0 * * * *" />
+              <input type="text" class="form-input" id="sched-cron" value="*/5 * * * *" placeholder="*/5 * * * *" required />
             </div>
             <div class="form-group" id="group-interval" style="display: none;">
               <label class="form-label">Intervalo (Segundos)</label>
-              <input type="number" class="form-input" id="sched-interval" placeholder="60" min="1" />
+              <input type="number" class="form-input" id="sched-interval" value="60" placeholder="60" min="1" />
             </div>
             <div class="form-group">
               <label class="form-label">Fila (Queue)</label>
