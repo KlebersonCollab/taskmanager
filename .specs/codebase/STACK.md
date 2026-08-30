@@ -2,6 +2,7 @@
 
 ## Backend Engine & API
 - **Language**: Python 3.11+
+- **Package & Environment Manager**: `uv` (Fast Python package installer, resolver, and virtual environment runner)
 - **API Framework**: FastAPI & Starlette (Uvicorn ASGI server)
 - **Broker & Key-Value Store**: Redis 7+ (via `redis-py` async client)
 - **Data Validation & Schemas**: Pydantic v2

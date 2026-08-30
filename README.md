@@ -18,12 +18,15 @@
 
 ## 🚀 Quickstart
 
-### 1. Installation
+### 1. Installation & Environment (com `uv`)
 
 ```bash
-# Clone and create virtual environment with uv or pip
-uv venv
-uv pip install -e ".[dev]"
+# 1. Sincronizar o ambiente virtual e dependências automaticamente
+uv sync --all-extras
+
+# 2. Adicionar novas dependências quando necessário
+# uv add <pacote>
+# uv add --dev <pacote_dev>
 ```
 
 ### 2. Define Background Tasks
