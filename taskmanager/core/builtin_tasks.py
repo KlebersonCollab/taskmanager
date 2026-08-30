@@ -19,6 +19,11 @@ async def run_command(command: str, cwd: str | None = None) -> dict[str, Any]:
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
 
+    # Normalize cwd: if invalid directory or placeholder, fallback to None (current workspace)
+    if cwd and (cwd.startswith("valor_") or not os.path.exists(cwd) or not os.path.isdir(cwd)):
+        logger.warning(f"Directory '{cwd}' is invalid or does not exist. Running in current working directory.")
+        cwd = None
+
     process = await asyncio.create_subprocess_shell(
         command,
         cwd=cwd,

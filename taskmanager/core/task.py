@@ -83,12 +83,15 @@ class Task:
                 )
 
                 # Heuristics for realistic smart sample values
-                if has_default and default_val is not None:
-                    sample_kwargs[param.name] = default_val
+                if has_default:
+                    if default_val is not None:
+                        sample_kwargs[param.name] = default_val
                 else:
                     ann_lower = ann_str.lower()
                     p_name = param.name.lower()
-                    if "int" in ann_lower or "year" in p_name or "month" in p_name or "count" in p_name:
+                    if "cwd" in p_name:
+                        pass  # Keep optional cwd omitted from sample
+                    elif "int" in ann_lower or "year" in p_name or "month" in p_name or "count" in p_name:
                         sample_kwargs[param.name] = 2026 if "year" in p_name else (8 if "month" in p_name else 1)
                     elif "float" in ann_lower:
                         sample_kwargs[param.name] = 10.0
