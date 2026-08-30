@@ -18,7 +18,7 @@
 | [x] | TASK-06 | feat | Implement Cron & Scheduled task engine with Redis distributed lock | `taskmanager/scheduler/cron.py`, `taskmanager/scheduler/scheduler.py`, `tests/test_scheduler.py` | TASK-05 | pass: 3 scheduler tests passed in 0.28s |
 | [x] | TASK-07 | feat | Expose FastAPI REST endpoints and WebSocket event broadcaster | `taskmanager/api/app.py`, `taskmanager/api/events.py`, `tests/test_api.py` | TASK-06 | pass: 4 API tests passed in 0.39s (0 warnings) |
 | [x] | TASK-08 | feat | Build Linear Dark SPA Dashboard complying with DESIGN.md tokens | `taskmanager/ui/index.html`, `taskmanager/ui/app.js`, `taskmanager/ui/styles.css` | TASK-07 | pass: SPA files created & verified via test_api_index_and_static |
-| [x] | TASK-09 | feat | Implement Unified CLI (worker, scheduler, server, dev) and Quickstart README | `taskmanager/cli.py`, `README.md` | TASK-08 | pass: CLI help validated & comprehensive README.md authored |
+| [x] | TASK-09 | feat | Implement Unified CLI (worker, scheduler, server, dev), examples, and Quickstart README | `taskmanager/cli.py`, `README.md`, `example_tasks.py`, `enqueue_examples.py`, `scripts/backup_database.py` | TASK-08 | pass: CLI help validated & comprehensive README.md and examples authored |
 | [x] | TASK-10 | review | Run full sensor verification suite and validate all BDD Acceptance Criteria | `taskmanager/`, `tests/` | TASK-09 | pass: spec-drift ok, 15/15 tests passed, ruff clean, import ok |
 
 ## Schema Dictionary

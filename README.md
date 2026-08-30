@@ -79,7 +79,11 @@ if __name__ == "__main__":
 ### ⚡ All-in-One Dev Mode
 Starts the **API Server + Dashboard**, **Worker**, and **Scheduler** concurrently:
 ```bash
-taskmanager dev --host 0.0.0.0 --port 8000 --modules my_tasks
+# Run with the bundled example tasks
+uv run taskmanager dev --modules example_tasks
+
+# Or test programmatically enqueuing jobs in another terminal
+uv run python enqueue_examples.py
 ```
 Open **http://localhost:8000** in your browser to access the management dashboard.
 
