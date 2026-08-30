@@ -54,12 +54,15 @@ class RedisBroker:
     def _key_lock(self, name: str) -> str:
         return f"{self.prefix}:lock:{name}"
 
+    def _key_history(self) -> str:
+        return f"{self.prefix}:jobs:history"
+
     # --- Job Operations ---
     async def save_job(self, job: Job) -> None:
         """Persists or updates full Job state in Redis."""
         key = self._key_job(job.id)
         data = job.model_dump_json()
-        await self.redis.set(key, data)
+        await self.redis.set(key, data, ex=86400 * 7)  # 7-day TTL
 
     async def get_job(self, job_id: str) -> Job | None:
         """Retrieves a Job by ID from Redis."""
@@ -70,8 +73,10 @@ class RedisBroker:
         return Job.model_validate_json(data)
 
     async def enqueue(self, job: Job) -> Job:
-        """Pushes a job into the pending FIFO queue."""
+        """Pushes a job into the specified FIFO queue."""
         job.status = JobStatus.PENDING
+        if not job.logs:
+            job.logs.append(f"[{time.strftime('%H:%M:%S')}] Job enfileirado na fila '{job.queue}'.")
         await self.save_job(job)
         await self.redis.sadd(self._key_queues(), job.queue)
         await self.redis.rpush(self._key_queue(job.queue), job.id)
@@ -141,6 +146,9 @@ class RedisBroker:
                     job.status = JobStatus.ACTIVE
                     job.started_at = time.time()
                     job.worker_id = worker_id
+                    job.logs.append(
+                        f"[{time.strftime('%H:%M:%S')}] Job atribuído ao worker '{worker_id}'."
+                    )
                     await self.save_job(job)
                     # Add to worker's active set
                     await self.redis.sadd(self._key_active(worker_id), job.id)
@@ -160,17 +168,25 @@ class RedisBroker:
         """Marks a job as completed and stores the execution result."""
         job.status = JobStatus.COMPLETED
         job.completed_at = time.time()
+        job.duration = round((job.completed_at - (job.started_at or job.created_at)), 4)
         job.result = result
+        job.logs.append(
+            f"[{time.strftime('%H:%M:%S')}] Job concluído com sucesso em {job.duration:.3f}s."
+        )
         await self.save_job(job)
         if job.worker_id:
             await self.redis.srem(self._key_active(job.worker_id), job.id)
+
+        await self.redis.zadd(self._key_history(), {job.id: job.completed_at})
+        await self.redis.zremrangebyrank(self._key_history(), 0, -1001)
+
         await self.publish_event(
             "job:completed",
             {
                 "job_id": job.id,
                 "worker_id": job.worker_id,
                 "queue": job.queue,
-                "duration": (job.completed_at - (job.started_at or job.created_at)),
+                "duration": job.duration,
             },
         )
 
@@ -186,6 +202,9 @@ class RedisBroker:
             job.retry_count += 1
             backoff_delay = job.calculate_next_backoff()
             job.status = JobStatus.RETRYING
+            job.logs.append(
+                f"[{time.strftime('%H:%M:%S')}] Tentativa {job.retry_count}/{job.max_retries} falhou: {error}. Agendando retry em {backoff_delay}s."
+            )
             await self.save_job(job)
             await self.publish_event(
                 "job:retrying",
@@ -201,8 +220,15 @@ class RedisBroker:
             # Exhausted retries -> Route to Dead Letter Queue (DLQ)
             job.status = JobStatus.FAILED
             job.completed_at = time.time()
+            job.duration = round(((job.completed_at) - (job.started_at or job.created_at)), 4)
+            job.logs.append(
+                f"[{time.strftime('%H:%M:%S')}] Retentativas esgotadas ({job.retry_count}/{job.max_retries}). Movido para Dead Letter Queue (DLQ): {error}"
+            )
             await self.save_job(job)
             await self.redis.rpush(self._key_dlq(job.queue), job.id)
+            await self.redis.zadd(self._key_history(), {job.id: job.completed_at})
+            await self.redis.zremrangebyrank(self._key_history(), 0, -1001)
+
             await self.publish_event(
                 "job:failed", {"job_id": job.id, "queue": job.queue, "error": error, "dlq": True}
             )
@@ -277,6 +303,79 @@ class RedisBroker:
             "pending": pending_count,
             "delayed": delayed_count,
             "dlq": dlq_count,
+        }
+
+    async def get_history(
+        self,
+        limit: int = 50,
+        status: str | None = None,
+        task_name: str | None = None,
+    ) -> list[Job]:
+        """Retrieves recent job executions ordered from newest to oldest."""
+        history_key = self._key_history()
+        # Get recent job IDs by score descending
+        job_ids = await self.redis.zrevrange(history_key, 0, limit * 3)
+        jobs: list[Job] = []
+
+        for j_id in job_ids:
+            job = await self.get_job(j_id)
+            if not job:
+                continue
+            if status and job.status != status:
+                continue
+            if task_name and task_name.lower() not in job.task_name.lower():
+                continue
+            jobs.append(job)
+            if len(jobs) >= limit:
+                break
+        return jobs
+
+    async def get_observability_metrics(self) -> dict[str, Any]:
+        """Calculates LGTM-style aggregated performance metrics over recent executions."""
+        history_key = self._key_history()
+        job_ids = await self.redis.zrevrange(history_key, 0, 200)
+
+        completed_count = 0
+        failed_count = 0
+        durations: list[float] = []
+        now = time.time()
+        last_minute_runs = 0
+
+        for j_id in job_ids:
+            job = await self.get_job(j_id)
+            if not job:
+                continue
+            if job.status == JobStatus.COMPLETED:
+                completed_count += 1
+                if job.duration is not None:
+                    durations.append(job.duration)
+                if job.completed_at and (now - job.completed_at) <= 60:
+                    last_minute_runs += 1
+            elif job.status == JobStatus.FAILED:
+                failed_count += 1
+                if job.duration is not None:
+                    durations.append(job.duration)
+
+        total = completed_count + failed_count
+        success_rate = round((completed_count / total * 100), 1) if total > 0 else 100.0
+
+        if durations:
+            sorted_durations = sorted(durations)
+            avg_duration_ms = round((sum(durations) / len(durations)) * 1000, 1)
+            p95_idx = int(len(sorted_durations) * 0.95)
+            p95_duration_ms = round(sorted_durations[min(p95_idx, len(sorted_durations) - 1)] * 1000, 1)
+        else:
+            avg_duration_ms = 0.0
+            p95_duration_ms = 0.0
+
+        return {
+            "total_executions": total,
+            "completed_count": completed_count,
+            "failed_count": failed_count,
+            "success_rate_percent": success_rate,
+            "avg_duration_ms": avg_duration_ms,
+            "p95_duration_ms": p95_duration_ms,
+            "throughput_per_minute": last_minute_runs,
         }
 
     # --- Real-Time Pub/Sub Events ---

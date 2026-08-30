@@ -204,6 +204,20 @@ def create_app(
         )
         return enqueued
 
+    @app.get("/api/jobs/history")
+    async def get_job_history(
+        limit: int = 50,
+        status: str | None = None,
+        task_name: str | None = None,
+    ):
+        """Returns recent job execution history with optional filtering."""
+        return await broker.get_history(limit=limit, status=status, task_name=task_name)
+
+    @app.get("/api/metrics/observability")
+    async def get_observability_metrics():
+        """Returns LGTM-style aggregated performance metrics (p95 latency, success rate, throughput)."""
+        return await broker.get_observability_metrics()
+
     @app.get("/api/jobs/{job_id}")
     async def get_job_by_id(job_id: str):
         job = await broker.get_job(job_id)

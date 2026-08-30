@@ -134,3 +134,31 @@ async def test_api_index_and_static(app_setup):
         res = await client.get("/")
         assert res.status_code == 200
         assert "TaskManager Dashboard" in res.text
+
+
+@pytest.mark.asyncio
+async def test_api_history_and_observability_metrics(app_setup):
+    app, broker, _ = app_setup
+    job = Job(task_name="api_ping", queue="default")
+    await broker.enqueue(job)
+    fetched = await broker.fetch_next_job(["default"], worker_id="worker-obs")
+    await broker.mark_completed(fetched, result={"status": "pong"})
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # History
+        res_hist = await client.get("/api/jobs/history")
+        assert res_hist.status_code == 200
+        history_list = res_hist.json()
+        assert len(history_list) >= 1
+        assert history_list[0]["id"] == job.id
+        assert history_list[0]["status"] == "completed"
+
+        # Observability Metrics
+        res_metrics = await client.get("/api/metrics/observability")
+        assert res_metrics.status_code == 200
+        m = res_metrics.json()
+        assert m["total_executions"] >= 1
+        assert m["success_rate_percent"] == 100.0
+        assert "avg_duration_ms" in m
+        assert "p95_duration_ms" in m

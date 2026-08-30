@@ -45,6 +45,10 @@ function refreshCurrentTab(isBackground = false) {
   if (currentTab === "queues") fetchTasks();
   if (currentTab === "schedules") fetchSchedules();
   if (currentTab === "dlq") fetchDlq("default");
+  if (currentTab === "history") {
+    fetchHistory();
+    fetchObservabilityMetrics();
+  }
 }
 
 // --- WebSocket Live Stream ---
@@ -107,10 +111,14 @@ function handleLiveEvent(evt) {
   logEvent(type, summary);
 
   // Auto refresh overview metrics on significant events
-  if (["job:enqueued", "job:active", "job:completed", "job:failed", "schedule:triggered"].includes(type)) {
+  if (["job:enqueued", "job:active", "job:completed", "job:failed", "job:retrying", "schedule:triggered"].includes(type)) {
     if (currentTab === "overview") fetchOverview();
     if (currentTab === "workers") fetchWorkers();
     if (currentTab === "dlq" && type === "job:failed") fetchDlq("default");
+    if (currentTab === "history") {
+      fetchHistory();
+      fetchObservabilityMetrics();
+    }
   }
 }
 
@@ -704,4 +712,171 @@ function timeUntil(timestamp) {
   if (diff < 3600) return `Em ${Math.floor(diff / 60)} min`;
   const date = new Date(timestamp * 1000);
   return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// --- LGTM Observability & Execution History ---
+
+let historySearchTimer = null;
+function debounceFetchHistory() {
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(fetchHistory, 300);
+}
+
+async function fetchObservabilityMetrics() {
+  try {
+    const res = await fetch(`${API_BASE}/api/metrics/observability`);
+    const m = await res.json();
+
+    const rateElem = document.getElementById("obs-success-rate");
+    const rateBar = document.getElementById("obs-success-bar");
+    const rateSub = document.getElementById("obs-success-sub");
+    if (rateElem && rateBar) {
+      const rate = m.success_rate_percent !== undefined ? m.success_rate_percent : 100;
+      rateElem.innerText = `${rate.toFixed(1)}%`;
+      rateBar.style.width = `${rate}%`;
+      rateBar.className = "metric-progress-fill" + (rate < 80 ? " danger" : (rate < 95 ? " warn" : ""));
+      if (rateSub) rateSub.innerText = `${m.failed_count || 0} falhas de ${m.total_executions || 0} total`;
+    }
+
+    const avgElem = document.getElementById("obs-avg-duration");
+    if (avgElem) avgElem.innerText = `${m.avg_duration_ms || 0} ms`;
+
+    const p95Elem = document.getElementById("obs-p95-duration");
+    if (p95Elem) p95Elem.innerText = `${m.p95_duration_ms || 0} ms`;
+
+    const tpElem = document.getElementById("obs-throughput");
+    if (tpElem) tpElem.innerText = `${m.throughput_per_minute || 0} / min`;
+  } catch (err) {
+    console.error("Failed to fetch observability metrics", err);
+  }
+}
+
+async function fetchHistory() {
+  try {
+    const status = document.getElementById("history-filter-status")?.value || "";
+    const taskName = document.getElementById("history-search-task")?.value.trim() || "";
+
+    const params = new URLSearchParams({ limit: "50" });
+    if (status) params.append("status", status);
+    if (taskName) params.append("task_name", taskName);
+
+    const res = await fetch(`${API_BASE}/api/jobs/history?${params.toString()}`);
+    const jobs = await res.json();
+    const tbody = document.getElementById("history-table");
+    const countBadge = document.getElementById("history-count-badge");
+
+    if (countBadge) countBadge.innerText = `${jobs.length} registros`;
+
+    if (!tbody) return;
+    if (jobs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução encontrada para os filtros selecionados.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = jobs.map(j => {
+      let badgeClass = "badge-pending";
+      if (j.status === "completed") badgeClass = "badge-completed";
+      else if (j.status === "failed") badgeClass = "badge-failed";
+      else if (j.status === "active") badgeClass = "badge-active";
+      else if (j.status === "delayed" || j.status === "retrying") badgeClass = "badge-delayed";
+
+      const durationStr = j.duration !== null && j.duration !== undefined ? `${(j.duration * 1000).toFixed(1)} ms` : "--";
+      const timeStr = j.completed_at ? timeAgo(j.completed_at) : (j.started_at ? `Iniciado ${timeAgo(j.started_at)}` : timeAgo(j.created_at));
+
+      return `
+        <tr>
+          <td><span class="badge ${badgeClass}">${j.status.toUpperCase()}</span></td>
+          <td><code style="cursor: pointer; text-decoration: underline;" onclick="openJobTraceModal('${j.id}')">${j.id.substring(0, 8)}</code></td>
+          <td><strong>${escapeHtml(j.task_name)}</strong></td>
+          <td><code>${escapeHtml(j.queue)}</code></td>
+          <td>${durationStr}</td>
+          <td>${escapeHtml(j.worker_id || "--")}</td>
+          <td>${timeStr}</td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="openJobTraceModal('${j.id}')">🔍 Trace & Logs</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to fetch history", err);
+  }
+}
+
+async function openJobTraceModal(jobId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+    if (!res.ok) throw new Error("Job não encontrado");
+    const job = await res.json();
+
+    document.getElementById("lgtm-modal-title").innerText = `Job ${job.id.substring(0, 8)}: ${job.task_name}`;
+    document.getElementById("lgtm-modal-subtitle").innerText = `Fila: [${job.queue}] | Status: ${job.status.toUpperCase()} | Worker: ${job.worker_id || 'Nenhum'}`;
+
+    // 1. Render Tempo Trace Timeline
+    const timelineContainer = document.getElementById("lgtm-trace-timeline");
+    const steps = [
+      {
+        name: "Enfileirado",
+        time: job.created_at,
+        meta: `Criado e adicionado à fila '${job.queue}'`,
+        status: "completed"
+      }
+    ];
+
+    if (job.started_at) {
+      steps.push({
+        name: "Processando",
+        time: job.started_at,
+        meta: `Consumido pelo worker '${job.worker_id || 'dev-worker'}'`,
+        status: job.status === "active" ? "active" : "completed"
+      });
+    }
+
+    if (job.completed_at) {
+      const dur = job.duration !== null ? `${(job.duration * 1000).toFixed(1)}ms` : "";
+      steps.push({
+        name: job.status === "failed" ? "Falhou (DLQ)" : "Finalizado",
+        time: job.completed_at,
+        meta: job.status === "failed" ? `Erro: ${job.error || 'Falha'} (Duração: ${dur})` : `Concluído com sucesso em ${dur}`,
+        status: job.status === "failed" ? "failed" : "completed"
+      });
+    }
+
+    timelineContainer.innerHTML = steps.map((s, idx) => `
+      <div class="trace-step">
+        <div class="trace-dot ${s.status}"></div>
+        <div class="trace-step-name">${s.name}</div>
+        <div class="trace-step-meta">${timeAgo(s.time)} — ${escapeHtml(s.meta)}</div>
+      </div>
+    `).join("");
+
+    // 2. Render Loki Logs Console
+    const logsContainer = document.getElementById("lgtm-logs-console");
+    const logs = job.logs && job.logs.length > 0 ? job.logs : [`[INFO] Job registrado com ID ${job.id}`];
+    if (job.traceback) {
+      logs.push(`[ERROR] Traceback: ${job.traceback}`);
+    }
+
+    logsContainer.innerHTML = logs.map(l => {
+      const isErr = l.includes("[ERROR]") || l.includes("Falha") || l.includes("Traceback");
+      return `<div class="log-entry"><span class="${isErr ? 'log-err' : 'log-msg'}">${escapeHtml(l)}</span></div>`;
+    }).join("");
+
+    // 3. Render Payload & Output
+    const payloadViewer = document.getElementById("lgtm-payload-viewer");
+    const payloadData = {
+      args: job.args,
+      kwargs: job.kwargs,
+      result: job.result,
+      error: job.error,
+      retry_count: job.retry_count,
+      max_retries: job.max_retries,
+      duration_seconds: job.duration
+    };
+    payloadViewer.innerText = JSON.stringify(payloadData, null, 2);
+
+    openModal("modal-lgtm-trace");
+  } catch (err) {
+    alert("Erro ao abrir observabilidade do job: " + err.message);
+  }
 }

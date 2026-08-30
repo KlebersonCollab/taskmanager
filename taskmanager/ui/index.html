@@ -35,6 +35,9 @@
         <button class="nav-tab" data-tab="dlq">
           <span>Dead Letter (DLQ)</span>
         </button>
+        <button class="nav-tab" data-tab="history">
+          <span>📊 Execuções & Métricas</span>
+        </button>
       </nav>
 
       <div class="nav-actions">
@@ -238,6 +241,76 @@
           </div>
         </div>
       </section>
+
+      <!-- 6. LGTM Observability & Execution History Tab -->
+      <section id="tab-history" class="tab-pane">
+        <!-- Mimir / Prometheus KPI Metrics Bar -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">Taxa de Sucesso</div>
+            <div class="metric-value" id="obs-success-rate">100%</div>
+            <div class="metric-sub" id="obs-success-sub">0 falhas recentes</div>
+            <div class="metric-progress">
+              <div class="metric-progress-fill" id="obs-success-bar" style="width: 100%;"></div>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Duração Média (ms)</div>
+            <div class="metric-value" id="obs-avg-duration">0.0 ms</div>
+            <div class="metric-sub">Tempo de execução</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">P95 Latência (ms)</div>
+            <div class="metric-value" id="obs-p95-duration">0.0 ms</div>
+            <div class="metric-sub">95% das execuções abaixo</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Vazão (Throughput)</div>
+            <div class="metric-value" id="obs-throughput">0 / min</div>
+            <div class="metric-sub">Execuções no último minuto</div>
+          </div>
+        </div>
+
+        <!-- History Filter & Table -->
+        <div class="card">
+          <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+              <h2 class="card-title">Histórico de Execuções</h2>
+              <span class="badge badge-active" id="history-count-badge">0 registros</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select class="form-select" id="history-filter-status" onchange="fetchHistory()" style="width: 140px; padding: 4px 8px; font-size: 12px;">
+                <option value="">Todos Status</option>
+                <option value="completed">Concluídos</option>
+                <option value="failed">Falhas / DLQ</option>
+                <option value="active">Em Execução</option>
+                <option value="retrying">Retentando</option>
+              </select>
+              <input type="text" class="form-input" id="history-search-task" placeholder="Filtrar por tarefa..." oninput="debounceFetchHistory()" style="width: 160px; padding: 4px 8px; font-size: 12px;" />
+              <button class="btn btn-secondary btn-sm" onclick="fetchHistory()">🔄 Atualizar</button>
+            </div>
+          </div>
+          <div class="card-body table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Job ID</th>
+                  <th>Tarefa</th>
+                  <th>Fila</th>
+                  <th>Duração</th>
+                  <th>Worker</th>
+                  <th>Iniciado / Concluído</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="history-table">
+                <tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução recente gravada.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Modal Enqueue Task -->
@@ -346,10 +419,55 @@
           <button class="modal-close" onclick="closeModal('modal-job-detail')">&times;</button>
         </div>
         <div class="modal-body">
-          <pre id="job-detail-content">Carregando...</pre>
+          <pre id="job-detail-content" class="json-viewer">Carregando...</pre>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-job-detail')">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal LGTM Trace & Logs Inspector -->
+    <div class="modal-backdrop" id="modal-lgtm-trace">
+      <div class="modal" style="max-width: 780px;">
+        <div class="modal-header">
+          <div>
+            <h3 id="lgtm-modal-title">Observabilidade: Job Detail</h3>
+            <div style="font-size: 12px; color: var(--ink-tertiary);" id="lgtm-modal-subtitle">Trace & Logs</div>
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-lgtm-trace')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Tempo-style Trace Timeline -->
+          <div style="margin-bottom: 20px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--ink-subtle); letter-spacing: 0.05em; margin-bottom: 8px;">
+              ⏱️ Tempo Trace Timeline (Ciclo de Vida)
+            </div>
+            <div class="trace-timeline" id="lgtm-trace-timeline">
+              <!-- Steps rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Loki-style Log Console -->
+          <div style="margin-bottom: 20px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--ink-subtle); letter-spacing: 0.05em; margin-bottom: 8px;">
+              📜 Loki Logs & Eventos Capturados
+            </div>
+            <div class="loki-log-console" id="lgtm-logs-console">
+              <div class="log-entry"><span class="log-msg">[INFO] Aguardando logs...</span></div>
+            </div>
+          </div>
+
+          <!-- Mimir / Payload Inspection -->
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--ink-subtle); letter-spacing: 0.05em; margin-bottom: 8px;">
+              📦 Payload de Entrada & Retorno
+            </div>
+            <pre class="json-viewer" id="lgtm-payload-viewer"></pre>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-lgtm-trace')">Fechar</button>
         </div>
       </div>
     </div>

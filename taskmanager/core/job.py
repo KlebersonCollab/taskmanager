@@ -33,6 +33,8 @@ class Job(BaseModel):
     created_at: float = Field(default_factory=time.time)
     started_at: float | None = None
     completed_at: float | None = None
+    duration: float | None = None
+    logs: list[str] = Field(default_factory=list)
     result: Any = None
     error: str | None = None
     traceback: str | None = None
