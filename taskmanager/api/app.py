@@ -409,6 +409,25 @@ def create_app(
         count = await broker.purge_dlq(queue)
         return {"status": "purged", "count": count}
 
+    # --- Maintenance & Flush Endpoints ---
+    @app.post("/api/maintenance/flush")
+    async def flush_maintenance(payload: dict[str, str]):
+        target = payload.get("target", "queues")
+        if target == "queues":
+            res = await broker.flush_queues()
+            return {"status": "ok", "target": "queues", "result": res}
+        elif target == "history":
+            res = await broker.flush_history()
+            return {"status": "ok", "target": "history", "deleted_keys": res}
+        elif target == "all":
+            res = await broker.flush_all()
+            return {"status": "ok", "target": "all", "deleted_keys": res}
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid target. Must be 'queues', 'history', or 'all'.",
+            )
+
     # --- WebSocket Real-Time Stream ---
     @app.websocket("/ws/events")
     async def websocket_endpoint(websocket: WebSocket):

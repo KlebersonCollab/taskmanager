@@ -21,6 +21,7 @@
 | [x] | TASK-09 | feat | Implement Unified CLI (worker, scheduler, server, dev), Docker compose, examples, and Quickstart README | `taskmanager/cli.py`, `README.md`, `example_tasks.py`, `enqueue_examples.py`, `scripts/backup_database.py`, `Dockerfile`, `docker-compose.yml`, `.dockerignore` | TASK-08 | pass: CLI help validated & Docker stack and README.md authored |
 | [x] | TASK-10 | review | Run full sensor verification suite and validate all BDD Acceptance Criteria | `taskmanager/`, `tests/` | TASK-09 | pass: spec-drift ok, 15/15 tests passed, ruff clean, import ok |
 | [x] | TASK-11 | feat | Implement Dynamic In-App Worker Manager with UI Controls (Spawn, Pause, Resume, Stop) | `taskmanager/worker/worker.py`, `taskmanager/api/app.py`, `taskmanager/ui/index.html`, `taskmanager/ui/app.js`, `taskmanager/ui/styles.css` | TASK-10 | pass: In-app dynamic worker creation and pause/resume verified |
+| [x] | TASK-13 | feat | Implement Redis flush and maintenance operations (Flush Queues, Flush History, Flush All) with UI Modal | `taskmanager/core/broker.py`, `taskmanager/api/app.py`, `taskmanager/ui/index.html`, `taskmanager/ui/app.js`, `tests/test_api.py` | TASK-11 | pass: 20 tests passed, maintenance flush endpoints and modal verified |
 
 ## Schema Dictionary
 - **Status**: `[ ]` (Pending) | `[x]` (Verified Complete).

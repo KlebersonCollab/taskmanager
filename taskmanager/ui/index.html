@@ -45,6 +45,7 @@
           <span class="status-dot" id="wsDot"></span>
           <span id="wsText">Conectando...</span>
         </div>
+        <button class="btn btn-secondary btn-sm" onclick="openMaintenanceModal()" title="Limpeza do Redis & Manutenção">🧹 Limpar Redis</button>
         <button class="btn btn-secondary btn-sm" onclick="openEnqueueModal()">+ Nova Tarefa</button>
         <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Novo Cron</button>
       </div>
@@ -518,6 +519,52 @@
               <button type="submit" class="btn btn-primary">🚀 Iniciar Worker</button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+    <!-- Modal Maintenance / Flush Redis -->
+    <div class="modal-backdrop" id="modal-maintenance">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <h3>🧹 Limpeza & Manutenção do Redis</h3>
+            <div style="font-size: 12px; color: var(--ink-tertiary);">Gerenciamento de Armazenamento e Filas</div>
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-maintenance')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 16px;">
+            Escolha qual área do Redis você deseja limpar. As operações são executadas de forma atômica no broker.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--hairline); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong>🧹 Limpar Apenas Filas & Jobs</strong>
+                <div style="font-size: 12px; color: var(--ink-tertiary);">Zera tarefas pendentes, agendadas e na DLQ. Mantém workers e agendamentos cron.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="executeMaintenanceFlush('queues')">Limpar Filas</button>
+            </div>
+
+            <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--hairline); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong>📜 Limpar Histórico de Execuções</strong>
+                <div style="font-size: 12px; color: var(--ink-tertiary);">Zera métricas agregadas e registros de traces anteriores.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="executeMaintenanceFlush('history')">Limpar Histórico</button>
+            </div>
+
+            <div style="padding: 12px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="color: var(--semantic-error);">⚠️ Reset Total (Flush All)</strong>
+                <div style="font-size: 12px; color: var(--ink-tertiary);">Zera todo o banco de dados do TaskManager no Redis.</div>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="executeMaintenanceFlush('all')">Reset Total</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-maintenance')">Fechar</button>
         </div>
       </div>
     </div>

@@ -196,3 +196,31 @@ async def test_api_worker_spawn_and_control(app_setup):
         res_stop = await client.post(f"/api/workers/{worker_id}/stop")
         assert res_stop.status_code == 200
         assert res_stop.json()["status"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_api_maintenance_flush(app_setup):
+    app, broker, _ = app_setup
+    job1 = Job(task_name="flush_test_1", queue="default")
+    await broker.enqueue(job1)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Flush queues
+        res_q = await client.post("/api/maintenance/flush", json={"target": "queues"})
+        assert res_q.status_code == 200
+        assert res_q.json()["status"] == "ok"
+
+        # Flush history
+        res_h = await client.post("/api/maintenance/flush", json={"target": "history"})
+        assert res_h.status_code == 200
+        assert res_h.json()["status"] == "ok"
+
+        # Flush all
+        res_all = await client.post("/api/maintenance/flush", json={"target": "all"})
+        assert res_all.status_code == 200
+        assert res_all.json()["status"] == "ok"
+
+        # Invalid target
+        res_inv = await client.post("/api/maintenance/flush", json={"target": "invalid"})
+        assert res_inv.status_code == 400

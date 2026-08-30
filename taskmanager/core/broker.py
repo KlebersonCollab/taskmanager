@@ -288,6 +288,40 @@ class RedisBroker:
         await self.redis.delete(dlq_key)
         return count
 
+    # --- Maintenance & Flush Operations ---
+    async def flush_queues(self) -> dict[str, int]:
+        """Cleans all pending queues, delayed sets, and DLQ lists across all queues."""
+        queues = await self.get_all_queues()
+        total_deleted = 0
+        for q in queues:
+            # Delete queue, delayed, and dlq keys
+            deleted = await self.redis.delete(
+                self._key_queue(q),
+                self._key_delayed(q),
+                self._key_dlq(q),
+            )
+            total_deleted += deleted
+        await self.publish_event("maintenance:flushed", {"target": "queues"})
+        return {"cleared_queues": len(queues), "keys_deleted": total_deleted}
+
+    async def flush_history(self) -> int:
+        """Clears job execution history logs and metrics."""
+        history_key = self._key_history()
+        deleted = await self.redis.delete(history_key)
+        await self.publish_event("maintenance:flushed", {"target": "history"})
+        return deleted
+
+    async def flush_all(self) -> int:
+        """Clears all TaskManager keys in Redis (queues, jobs, history, dlq, schedules)."""
+        keys = []
+        async for key in self.redis.scan_iter(f"{self.prefix}:*"):
+            keys.append(key)
+        deleted_count = 0
+        if keys:
+            deleted_count = await self.redis.delete(*keys)
+        await self.publish_event("maintenance:flushed", {"target": "all"})
+        return deleted_count
+
     # --- Telemetry & Metrics ---
     async def get_all_queues(self) -> list[str]:
         """Returns all registered queue names."""

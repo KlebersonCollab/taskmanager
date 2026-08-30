@@ -1096,3 +1096,38 @@ async function openJobTraceModal(jobId) {
     toast.error("Erro ao abrir observabilidade", err.message);
   }
 }
+
+// --- Maintenance / Redis Flush Controller ---
+
+function openMaintenanceModal() {
+  openModal("modal-maintenance");
+}
+
+async function executeMaintenanceFlush(target) {
+  const targetNames = {
+    queues: "Filas e Jobs",
+    history: "Histórico de Execuções",
+    all: "Banco de Dados Redis Completo (Reset Total)",
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/maintenance/flush`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    });
+
+    if (res.ok) {
+      closeModal("modal-maintenance");
+      toast.success("Limpeza Concluída", `${targetNames[target] || target} foi limpo com sucesso no Redis.`);
+      logEvent("SYSTEM", `Limpeza do Redis executada: ${target}`);
+      refreshCurrentTab();
+      fetchOverview();
+    } else {
+      const err = await res.json();
+      toast.error("Erro na Limpeza", err.detail || "Falha ao executar limpeza no Redis.");
+    }
+  } catch (err) {
+    toast.error("Falha na Requisição", err.message);
+  }
+}
