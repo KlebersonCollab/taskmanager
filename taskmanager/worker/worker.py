@@ -22,6 +22,8 @@ class Worker:
         queues: list[str] | None = None,
         concurrency: int = 5,
         name: str | None = None,
+        max_memory_mb: float | None = None,
+        max_cpu_percent: float | None = None,
         broker: RedisBroker | None = None,
         task_registry: TaskRegistry | None = None,
     ):
@@ -29,6 +31,8 @@ class Worker:
         self.name = name or f"worker-{self.id[:8]}"
         self.queues = queues or ["default"]
         self.concurrency = concurrency
+        self.max_memory_mb = max_memory_mb
+        self.max_cpu_percent = max_cpu_percent
         self.registry = task_registry or registry
         self.broker = broker or self.registry.get_broker()
         self.semaphore = asyncio.Semaphore(concurrency)
@@ -60,8 +64,11 @@ class Worker:
         self._running = True
         self.info.status = "idle"
         await self.heartbeat.start()
+        limits_str = ""
+        if self.max_memory_mb or self.max_cpu_percent:
+            limits_str = f" [limits: memory={self.max_memory_mb or 'unlimited'}MB, cpu={self.max_cpu_percent or 'unlimited'}%]"
         logger.info(
-            f"Worker {self.name} [{self.id}] started listening on {self.queues} (concurrency={self.concurrency})"
+            f"Worker {self.name} [{self.id}] started listening on {self.queues} (concurrency={self.concurrency}){limits_str}"
         )
 
         try:
@@ -70,10 +77,30 @@ class Worker:
                     await asyncio.sleep(0.5)
                     continue
 
-                # Wait for available concurrency slot
+                # 1. Resource Backpressure / Guardrails check
+                if self.max_memory_mb and self.info.memory_mb >= self.max_memory_mb:
+                    logger.warning(
+                        f"⚠️ Worker {self.name} atingiu teto de memória ({self.info.memory_mb:.1f}MB >= {self.max_memory_mb}MB). Backpressure ativo (aguardando liberação de memória)..."
+                    )
+                    self.info.status = "throttled"
+                    await asyncio.sleep(2.0)
+                    continue
+
+                if self.max_cpu_percent and self.info.cpu_percent >= self.max_cpu_percent:
+                    logger.warning(
+                        f"⚠️ Worker {self.name} atingiu teto de CPU ({self.info.cpu_percent:.1f}% >= {self.max_cpu_percent}%). Backpressure ativo..."
+                    )
+                    self.info.status = "throttled"
+                    await asyncio.sleep(1.0)
+                    continue
+
+                if self.info.status == "throttled":
+                    self.info.status = "idle" if self.info.active_jobs_count == 0 else "busy"
+
+                # 2. Wait for available concurrency slot
                 await self.semaphore.acquire()
 
-                # Fetch next job
+                # 3. Fetch next job
                 job = await self.broker.fetch_next_job(self.queues, worker_id=self.id)
                 if job:
                     self.info.active_jobs_count += 1

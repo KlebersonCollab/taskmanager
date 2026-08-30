@@ -97,3 +97,36 @@ async def test_worker_heartbeat_and_orphan_reaper(test_setup):
     reaped_job = await broker.get_job(job.id)
     assert reaped_job.status == JobStatus.PENDING
     assert reaped_job.worker_id is None
+
+
+@pytest.mark.asyncio
+async def test_worker_resource_backpressure(test_setup):
+    broker, reg = test_setup
+
+    @task(name="quick_task", broker=broker)
+    def quick_task():
+        return "ok"
+
+    reg.register(quick_task)
+    job = await quick_task.delay()
+
+    # Create worker with max_memory_mb set lower than actual memory to force throttle
+    worker = Worker(
+        queues=["default"],
+        concurrency=1,
+        max_memory_mb=0.0001,  # Forces throttling
+        broker=broker,
+        task_registry=reg,
+    )
+    worker.info.memory_mb = 50.0  # Exceeds max_memory_mb
+
+    worker_task = asyncio.create_task(worker.start())
+    await asyncio.sleep(0.1)
+
+    # Job should not be picked up because worker is throttled
+    res = await broker.get_job(job.id)
+    assert res.status == JobStatus.PENDING
+    assert worker.info.status == "throttled"
+
+    await worker.stop()
+    worker_task.cancel()

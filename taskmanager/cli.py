@@ -82,6 +82,8 @@ async def run_worker(
     queues: list[str],
     concurrency: int,
     name: str | None,
+    max_memory_mb: float | None = None,
+    max_cpu_percent: float | None = None,
     redis_url: str | None = None,
     in_memory: bool = False,
 ) -> None:
@@ -89,7 +91,13 @@ async def run_worker(
     broker = RedisBroker(client, prefix=settings.redis_prefix)
     registry.set_broker(broker)
     worker = Worker(
-        queues=queues, concurrency=concurrency, name=name, broker=broker, task_registry=registry
+        queues=queues,
+        concurrency=concurrency,
+        name=name,
+        max_memory_mb=max_memory_mb,
+        max_cpu_percent=max_cpu_percent,
+        broker=broker,
+        task_registry=registry,
     )
     try:
         await worker.start()
@@ -127,6 +135,8 @@ async def run_dev(
     port: int,
     queues: list[str],
     concurrency: int,
+    max_memory_mb: float | None = None,
+    max_cpu_percent: float | None = None,
     redis_url: str | None = None,
     in_memory: bool = False,
 ) -> None:
@@ -147,6 +157,8 @@ async def run_dev(
         queues=active_queues,
         concurrency=concurrency,
         name="dev-worker",
+        max_memory_mb=max_memory_mb,
+        max_cpu_percent=max_cpu_percent,
         broker=broker,
         task_registry=registry,
     )
@@ -191,6 +203,8 @@ def main() -> None:
         "-c", "--concurrency", type=int, default=5, help="Worker concurrency (default: 5)"
     )
     worker_parser.add_argument("-n", "--name", default=None, help="Custom worker name")
+    worker_parser.add_argument("--max-memory-mb", type=float, default=None, help="Max RSS memory (MB) before backpressure")
+    worker_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU % before backpressure")
     worker_parser.add_argument("--redis-url", default=None, help="Redis connection URL")
     worker_parser.add_argument("--in-memory", action="store_true", help="Force in-memory Redis")
     worker_parser.add_argument(
@@ -213,6 +227,8 @@ def main() -> None:
     dev_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
     dev_parser.add_argument("-q", "--queues", default="default", help="Comma-separated queue names")
     dev_parser.add_argument("-c", "--concurrency", type=int, default=5, help="Worker concurrency")
+    dev_parser.add_argument("--max-memory-mb", type=float, default=None, help="Max RSS memory (MB) before backpressure")
+    dev_parser.add_argument("--max-cpu-percent", type=float, default=None, help="Max CPU % before backpressure")
     dev_parser.add_argument("--redis-url", default=None, help="Redis connection URL")
     dev_parser.add_argument("--in-memory", action="store_true", help="Force in-memory Redis")
     dev_parser.add_argument(
@@ -240,6 +256,8 @@ def main() -> None:
                 queues=queues,
                 concurrency=args.concurrency,
                 name=args.name,
+                max_memory_mb=args.max_memory_mb,
+                max_cpu_percent=args.max_cpu_percent,
                 redis_url=args.redis_url,
                 in_memory=args.in_memory,
             )
@@ -263,6 +281,8 @@ def main() -> None:
                 port=args.port,
                 queues=queues,
                 concurrency=args.concurrency,
+                max_memory_mb=args.max_memory_mb,
+                max_cpu_percent=args.max_cpu_percent,
                 redis_url=args.redis_url,
                 in_memory=args.in_memory,
             )
