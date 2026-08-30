@@ -162,3 +162,37 @@ async def test_api_history_and_observability_metrics(app_setup):
         assert m["success_rate_percent"] == 100.0
         assert "avg_duration_ms" in m
         assert "p95_duration_ms" in m
+
+
+@pytest.mark.asyncio
+async def test_api_worker_spawn_and_control(app_setup):
+    app, _, _ = app_setup
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Spawn a dynamic worker
+        spawn_payload = {
+            "name": "worker-api-test",
+            "queues": ["test-queue"],
+            "concurrency": 2,
+            "max_memory_mb": 512,
+        }
+        res_spawn = await client.post("/api/workers/spawn", json=spawn_payload)
+        assert res_spawn.status_code == 200
+        w_data = res_spawn.json()
+        assert w_data["status"] == "started"
+        worker_id = w_data["id"]
+
+        # 2. Pause worker
+        res_pause = await client.post(f"/api/workers/{worker_id}/pause")
+        assert res_pause.status_code == 200
+        assert res_pause.json()["status"] == "paused"
+
+        # 3. Resume worker
+        res_resume = await client.post(f"/api/workers/{worker_id}/resume")
+        assert res_resume.status_code == 200
+        assert res_resume.json()["status"] == "resumed"
+
+        # 4. Stop worker
+        res_stop = await client.post(f"/api/workers/{worker_id}/stop")
+        assert res_stop.status_code == 200
+        assert res_stop.json()["status"] == "stopped"

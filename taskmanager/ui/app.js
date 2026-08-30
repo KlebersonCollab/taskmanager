@@ -215,16 +215,26 @@ async function fetchWorkers() {
     const res = await fetch(`${API_BASE}/api/workers`);
     const workers = await res.json();
     const container = document.getElementById("workers-container");
+    const countBadge = document.getElementById("workers-count-badge");
 
+    if (countBadge) countBadge.innerText = `${workers.length} workers`;
+
+    if (!container) return;
     if (workers.length === 0) {
-      container.innerHTML = `<div style="color: var(--ink-subtle);">Nenhum worker ativo encontrado. Inicie um worker com 'taskmanager worker'.</div>`;
+      container.innerHTML = `<div style="color: var(--ink-subtle);">Nenhum worker ativo encontrado. Clique em <strong>+ Iniciar Novo Worker</strong> acima ou execute <code>taskmanager worker</code> no terminal.</div>`;
       return;
     }
 
     container.innerHTML = workers.map(w => {
       const isDead = w.status === "dead";
-      const badgeClass = isDead ? "badge-failed" : (w.status === "busy" ? "badge-active" : "badge-idle");
-      const uptimeSec = Math.round((Date.now() / 1000) - w.started_at);
+      let badgeClass = "badge-idle";
+      if (isDead) badgeClass = "badge-failed";
+      else if (w.status === "busy") badgeClass = "badge-active";
+      else if (w.status === "paused" || w.status === "throttled") badgeClass = "badge-delayed";
+
+      const pauseBtn = w.status === "paused"
+        ? `<button class="btn btn-primary btn-sm" onclick="resumeWorker('${w.id}')">▶ Retomar</button>`
+        : `<button class="btn btn-secondary btn-sm" onclick="pauseWorker('${w.id}')">⏸ Pausar</button>`;
 
       return `
         <div class="worker-card">
@@ -248,18 +258,105 @@ async function fetchWorkers() {
             <strong>${w.cpu_percent}% / ${w.memory_mb} MB</strong>
           </div>
           <div class="worker-stat-row">
-            <span>Jobs Completados / Falhas</span>
+            <span>Jobs Concluídos / Falhas</span>
             <strong>${w.completed_jobs_count} / ${w.failed_jobs_count}</strong>
           </div>
           <div class="worker-stat-row">
             <span>Último Heartbeat</span>
             <strong>${timeAgo(w.last_heartbeat)}</strong>
           </div>
+          <div style="margin-top: 14px; pt-2; border-top: 1px solid var(--hairline); display: flex; gap: 8px; justify-content: flex-end; padding-top: 10px;">
+            ${pauseBtn}
+            <button class="btn btn-secondary btn-sm" style="color: var(--semantic-error);" onclick="stopWorker('${w.id}')">⏹ Parar</button>
+          </div>
         </div>
       `;
     }).join("");
   } catch (err) {
     console.error("Failed to fetch workers", err);
+  }
+}
+
+function openSpawnWorkerModal() {
+  const nameInput = document.getElementById("spawn-worker-name");
+  if (nameInput) {
+    nameInput.value = `worker-ui-${Math.random().toString(36).substring(2, 6)}`;
+  }
+  openModal("modal-spawn-worker");
+}
+
+async function handleSpawnWorkerSubmit(e) {
+  e.preventDefault();
+  const name = document.getElementById("spawn-worker-name")?.value.trim() || undefined;
+  const queuesRaw = document.getElementById("spawn-worker-queues")?.value.trim() || "default";
+  const queues = queuesRaw.split(",").map(q => q.trim()).filter(Boolean);
+  const concurrency = parseInt(document.getElementById("spawn-worker-concurrency")?.value || "5", 10);
+  const maxMemRaw = document.getElementById("spawn-worker-max-mem")?.value.trim();
+  const maxCpuRaw = document.getElementById("spawn-worker-max-cpu")?.value.trim();
+
+  const payload = {
+    name,
+    queues,
+    concurrency,
+    max_memory_mb: maxMemRaw ? parseFloat(maxMemRaw) : null,
+    max_cpu_percent: maxCpuRaw ? parseFloat(maxCpuRaw) : null,
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/workers/spawn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      closeModal("modal-spawn-worker");
+      fetchWorkers();
+      fetchOverview();
+      logEvent("WORKER", `Novo worker '${name || 'dinâmico'}' iniciado com sucesso.`);
+    } else {
+      const err = await res.json();
+      alert("Erro ao iniciar worker: " + (err.detail || "Erro desconhecido"));
+    }
+  } catch (err) {
+    alert("Erro na requisição: " + err.message);
+  }
+}
+
+async function pauseWorker(workerId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/workers/${workerId}/pause`, { method: "POST" });
+    if (res.ok) {
+      fetchWorkers();
+      logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} pausado.`);
+    }
+  } catch (err) {
+    console.error("Failed to pause worker", err);
+  }
+}
+
+async function resumeWorker(workerId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/workers/${workerId}/resume`, { method: "POST" });
+    if (res.ok) {
+      fetchWorkers();
+      logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} retomado.`);
+    }
+  } catch (err) {
+    console.error("Failed to resume worker", err);
+  }
+}
+
+async function stopWorker(workerId) {
+  if (!confirm(`Deseja realmente parar o worker ${workerId.substring(0, 8)}?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/workers/${workerId}/stop`, { method: "POST" });
+    if (res.ok) {
+      fetchWorkers();
+      logEvent("CONTROL", `Worker ${workerId.substring(0, 8)} encerrado.`);
+    }
+  } catch (err) {
+    console.error("Failed to stop worker", err);
   }
 }
 

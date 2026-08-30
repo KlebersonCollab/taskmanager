@@ -144,9 +144,15 @@
       <!-- 2. Workers Tab -->
       <section id="tab-workers" class="tab-pane">
         <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Workers Conectados</h2>
-            <button class="btn btn-secondary btn-sm" onclick="fetchWorkers()">Atualizar</button>
+          <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <h2 class="card-title">Workers Conectados</h2>
+              <span class="badge badge-active" id="workers-count-badge">0 workers</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="fetchWorkers()">🔄 Atualizar</button>
+              <button class="btn btn-primary btn-sm" onclick="openSpawnWorkerModal()">+ Iniciar Novo Worker</button>
+            </div>
           </div>
           <div class="card-body">
             <div class="workers-grid" id="workers-container">
@@ -468,6 +474,50 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-lgtm-trace')">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Spawn Dynamic Worker -->
+    <div class="modal-backdrop" id="modal-spawn-worker">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <h3>Iniciar Novo Worker</h3>
+            <div style="font-size: 12px; color: var(--ink-tertiary);">Configuração de Runtime Dinâmico</div>
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-spawn-worker')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-spawn-worker" onsubmit="handleSpawnWorkerSubmit(event)">
+            <div class="form-group">
+              <label class="form-label">Nome do Worker (Identificador)</label>
+              <input type="text" class="form-input" id="spawn-worker-name" placeholder="ex: worker-emails-02" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Filas de Escuta (separadas por vírgula)</label>
+              <input type="text" class="form-input" id="spawn-worker-queues" value="default" placeholder="default, emails, reports" required />
+              <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 4px;">
+                Dica: O worker consumirá na ordem de prioridade definida acima.
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Concorrência Máxima (Tarefas simultâneas)</label>
+              <input type="number" class="form-input" id="spawn-worker-concurrency" value="5" min="1" max="50" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Teto de Memória RSS em MB (Opcional - Backpressure)</label>
+              <input type="number" class="form-input" id="spawn-worker-max-mem" placeholder="ex: 512" min="10" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Teto de CPU em % (Opcional - Backpressure)</label>
+              <input type="number" class="form-input" id="spawn-worker-max-cpu" placeholder="ex: 85" min="10" max="100" />
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="closeModal('modal-spawn-worker')">Cancelar</button>
+              <button type="submit" class="btn btn-primary">🚀 Iniciar Worker</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

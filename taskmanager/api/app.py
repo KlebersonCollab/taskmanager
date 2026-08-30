@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,15 @@ from taskmanager.core.task import TaskRegistry, registry
 from taskmanager.scheduler.cron import Schedule
 from taskmanager.scheduler.scheduler import Scheduler
 from taskmanager.worker.heartbeat import HeartbeatManager
+from taskmanager.worker.worker import Worker
+
+
+class SpawnWorkerRequest(BaseModel):
+    name: str | None = None
+    queues: list[str] = Field(default_factory=lambda: ["default"])
+    concurrency: int = 5
+    max_memory_mb: float | None = None
+    max_cpu_percent: float | None = None
 
 
 class CreateScheduleRequest(BaseModel):
@@ -83,6 +93,8 @@ def create_app(
     app.state.registry = task_reg
     app.state.scheduler = scheduler
     app.state.event_manager = event_manager
+
+    spawned_workers: dict[str, tuple[Worker, asyncio.Task[Any]]] = {}
 
     # --- REST Endpoints ---
 
@@ -150,6 +162,64 @@ def create_app(
     @app.get("/api/workers")
     async def get_workers():
         return await HeartbeatManager.get_all_workers(broker)
+
+    @app.post("/api/workers/spawn")
+    async def spawn_worker_endpoint(req: SpawnWorkerRequest):
+        """Dynamically creates and starts a new worker directly from the Dashboard/API."""
+        worker = Worker(
+            name=req.name,
+            queues=req.queues,
+            concurrency=req.concurrency,
+            max_memory_mb=req.max_memory_mb,
+            max_cpu_percent=req.max_cpu_percent,
+            broker=broker,
+            task_registry=task_reg,
+        )
+        task = asyncio.create_task(worker.start())
+        spawned_workers[worker.id] = (worker, task)
+        # Publish event so frontend updates instantly
+        await broker.publish_event(
+            "worker:spawned",
+            {
+                "id": worker.id,
+                "name": worker.name,
+                "queues": worker.queues,
+                "concurrency": worker.concurrency,
+            },
+        )
+        return {
+            "status": "started",
+            "id": worker.id,
+            "name": worker.name,
+            "queues": worker.queues,
+            "concurrency": worker.concurrency,
+        }
+
+    @app.post("/api/workers/{worker_id}/pause")
+    async def pause_worker_endpoint(worker_id: str):
+        """Pauses job consumption on a worker."""
+        if worker_id in spawned_workers:
+            spawned_workers[worker_id][0].pause()
+        await broker.publish_control("pause", worker_id=worker_id)
+        return {"status": "paused", "worker_id": worker_id}
+
+    @app.post("/api/workers/{worker_id}/resume")
+    async def resume_worker_endpoint(worker_id: str):
+        """Resumes job consumption on a worker."""
+        if worker_id in spawned_workers:
+            spawned_workers[worker_id][0].resume()
+        await broker.publish_control("resume", worker_id=worker_id)
+        return {"status": "resumed", "worker_id": worker_id}
+
+    @app.post("/api/workers/{worker_id}/stop")
+    async def stop_worker_endpoint(worker_id: str):
+        """Gracefully terminates a worker."""
+        if worker_id in spawned_workers:
+            w, _ = spawned_workers[worker_id]
+            await w.stop()
+            del spawned_workers[worker_id]
+        await broker.publish_control("stop", worker_id=worker_id)
+        return {"status": "stopped", "worker_id": worker_id}
 
     @app.get("/api/tasks")
     async def list_registered_tasks():

@@ -20,6 +20,7 @@
 | [x] | TASK-08 | feat | Build Linear Dark SPA Dashboard complying with DESIGN.md tokens | `taskmanager/ui/index.html`, `taskmanager/ui/app.js`, `taskmanager/ui/styles.css` | TASK-07 | pass: SPA files created & verified via test_api_index_and_static |
 | [x] | TASK-09 | feat | Implement Unified CLI (worker, scheduler, server, dev), Docker compose, examples, and Quickstart README | `taskmanager/cli.py`, `README.md`, `example_tasks.py`, `enqueue_examples.py`, `scripts/backup_database.py`, `Dockerfile`, `docker-compose.yml`, `.dockerignore` | TASK-08 | pass: CLI help validated & Docker stack and README.md authored |
 | [x] | TASK-10 | review | Run full sensor verification suite and validate all BDD Acceptance Criteria | `taskmanager/`, `tests/` | TASK-09 | pass: spec-drift ok, 15/15 tests passed, ruff clean, import ok |
+| [x] | TASK-11 | feat | Implement Dynamic In-App Worker Manager with UI Controls (Spawn, Pause, Resume, Stop) | `taskmanager/worker/worker.py`, `taskmanager/api/app.py`, `taskmanager/ui/index.html`, `taskmanager/ui/app.js`, `taskmanager/ui/styles.css` | TASK-10 | pass: In-app dynamic worker creation and pause/resume verified |
 
 ## Schema Dictionary
 - **Status**: `[ ]` (Pending) | `[x]` (Verified Complete).

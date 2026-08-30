@@ -48,22 +48,44 @@ class Worker:
         self._running = False
         self._paused = False
         self._active_tasks: set[asyncio.Task[Any]] = set()
+        self._control_task: asyncio.Task[Any] | None = None
 
     def pause(self) -> None:
         """Pauses job consumption."""
         self._paused = True
         self.info.status = "paused"
+        logger.info(f"Worker {self.name} paused.")
 
     def resume(self) -> None:
         """Resumes job consumption."""
         self._paused = False
-        self.info.status = "idle"
+        self.info.status = "idle" if self.info.active_jobs_count == 0 else "busy"
+        logger.info(f"Worker {self.name} resumed.")
+
+    async def _listen_control(self) -> None:
+        """Listens for remote control signals (pause, resume, stop) via Redis pub/sub."""
+        try:
+            async for cmd in self.broker.subscribe_control():
+                target_id = cmd.get("worker_id")
+                if target_id is None or target_id == self.id or target_id == self.name:
+                    action = cmd.get("action")
+                    if action == "pause":
+                        self.pause()
+                    elif action == "resume":
+                        self.resume()
+                    elif action == "stop":
+                        asyncio.create_task(self.stop())
+        except asyncio.CancelledError:
+            pass
+        except Exception as err:
+            logger.debug(f"Worker control listener closed: {err}")
 
     async def start(self) -> None:
-        """Starts the worker processing loop and heartbeat manager."""
+        """Starts the worker processing loop, heartbeat manager, and control listener."""
         self._running = True
         self.info.status = "idle"
         await self.heartbeat.start()
+        self._control_task = asyncio.create_task(self._listen_control())
         limits_str = ""
         if self.max_memory_mb or self.max_cpu_percent:
             limits_str = f" [limits: memory={self.max_memory_mb or 'unlimited'}MB, cpu={self.max_cpu_percent or 'unlimited'}%]"
@@ -166,6 +188,9 @@ class Worker:
         self.info.status = "stopped"
         logger.info(f"Worker {self.name} stopping (drain={drain})...")
 
+        if self._control_task and not self._control_task.done():
+            self._control_task.cancel()
+
         if drain and self._active_tasks:
             try:
                 await asyncio.wait_for(
@@ -177,3 +202,4 @@ class Worker:
 
         await self.heartbeat.stop()
         logger.info(f"Worker {self.name} stopped.")
+

@@ -54,6 +54,9 @@ class RedisBroker:
     def _key_lock(self, name: str) -> str:
         return f"{self.prefix}:lock:{name}"
 
+    def _key_control(self) -> str:
+        return f"{self.prefix}:control"
+
     def _key_history(self) -> str:
         return f"{self.prefix}:jobs:history"
 
@@ -407,3 +410,27 @@ class RedisBroker:
         finally:
             await pubsub.unsubscribe(self._key_events())
             await pubsub.aclose()
+
+    async def publish_control(self, action: str, worker_id: str | None = None) -> None:
+        """Publishes a control action (pause, resume, stop) targeted to workers."""
+        payload = json.dumps({"action": action, "worker_id": worker_id, "timestamp": time.time()})
+        try:
+            await self.redis.publish(self._key_control(), payload)
+        except Exception as err:
+            logger.debug(f"Failed to publish control command {action}: {err}")
+
+    async def subscribe_control(self) -> AsyncIterator[dict[str, Any]]:
+        """Subscribes to the worker control channel."""
+        pubsub = self.redis.pubsub()
+        await pubsub.subscribe(self._key_control())
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        yield json.loads(message["data"])
+                    except Exception:
+                        pass
+        finally:
+            await pubsub.unsubscribe(self._key_control())
+            await pubsub.aclose()
+
