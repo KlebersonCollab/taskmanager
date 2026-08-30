@@ -6,6 +6,7 @@ services:
     image: redis:7-alpine
     container_name: taskmanager-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
     ports:
       - "6379:6379"
     volumes:

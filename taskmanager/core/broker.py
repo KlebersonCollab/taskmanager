@@ -384,6 +384,35 @@ class RedisBroker:
             "dlq": dlq_count,
         }
 
+    async def check_persistence_health(self) -> dict[str, Any]:
+        """Inspects Redis server configuration for AOF durability and eviction safety."""
+        health: dict[str, Any] = {
+            "aof_enabled": False,
+            "maxmemory_policy": "unknown",
+            "is_durable": False,
+            "warnings": [],
+        }
+        try:
+            config = await self.redis.config_get("appendonly", "maxmemory-policy")
+            aof = config.get("appendonly", "no").lower() == "yes"
+            policy = config.get("maxmemory-policy", "noeviction")
+            health["aof_enabled"] = aof
+            health["maxmemory_policy"] = policy
+            health["is_durable"] = aof and policy == "noeviction"
+
+            if not aof:
+                health["warnings"].append(
+                    "AOF persistence is disabled. Crons/DLQ might not survive unexpected reboots."
+                )
+            if policy != "noeviction":
+                health["warnings"].append(
+                    f"Redis eviction policy is '{policy}'. Use 'noeviction' to prevent silent job deletion."
+                )
+        except Exception:
+            # FakeRedis or managed Redis without CONFIG GET permission
+            pass
+        return health
+
     async def get_history(
         self,
         limit: int = 50,

@@ -150,6 +150,8 @@ def create_app(
                 worker_memory_mb = 0.0
                 worker_memory_detail = "--"
 
+        persistence = await broker.check_persistence_health()
+
         return {
             "workers_count": len(active_workers),
             "total_workers": len(workers),
@@ -162,6 +164,7 @@ def create_app(
             "worker_memory_mb": worker_memory_mb,
             "worker_memory_detail": worker_memory_detail,
             "queues": queue_summaries,
+            "persistence": persistence,
         }
 
     @app.get("/api/queues")
