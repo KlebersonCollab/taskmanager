@@ -42,10 +42,15 @@
 Você pode adicionar o TaskManager ao seu projeto Python existente de 3 maneiras:
 
 ```bash
-# Instalar no seu projeto:
-pip install taskmanager
+# Instalar no seu projeto via PyPI:
+pip install taskmanager-engine
 # ou usando UV:
-uv add taskmanager
+uv add taskmanager-engine
+
+# Dica: Para forçar o download da versão mais recente ignorando o cache local do UV:
+uv sync --refresh
+# ou
+uv add "taskmanager-engine>=0.1.2" --refresh
 ```
 
 ---
@@ -172,16 +177,26 @@ O repositório inclui projetos de exemplo completos e prontos para rodar:
 Para gerar os pacotes `.whl` (Wheel) e `.tar.gz` (Source Distribution) com todos os arquivos de UI embutidos:
 
 ```bash
-# 1. Compilar os artefatos de distribuição
+# 1. Atualizar a versão no pyproject.toml e sincronizar o lockfile local
+uv lock
+uv sync --all-extras
+
+# 2. Compilar os artefatos de distribuição
 uv build
 # (ou via python -m build)
 
-# 2. Testar instalação local em modo editável
+# 3. Testar instalação local em modo editável
 pip install -e .
 
-# 3. Publicar no PyPI
+# 4. Publicar no PyPI
 uv publish --token <SEU_TOKEN_PYPI>
 # (ou twine upload dist/*)
+
+# 5. Em projetos externos, ignorar o cache do UV para baixar a nova versão imediatamente:
+uv sync --refresh
+# ou
+uv add "taskmanager-engine>=0.1.2" --refresh
+# (ou limpar todo o cache local: uv cache clean)
 ```
 
 ---
