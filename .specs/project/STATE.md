@@ -1,13 +1,14 @@
 # Project State & Context
 
 ## 🏁 Session Status
-- **Current Task**: Completed Feature `ft-03-library-packaging-and-integrations` (Wheel package data for static SPA assets, `TaskManager` high-level class, `taskmanager.contrib.django` app & commands, FastAPI mount helper, subpath mount resilience in UI, sample reference projects in `samples/`, and updated `README.md`).
-- **Progress**: 100% of ft-01, ft-02, and ft-03 tasks verified (27/27 tests passing, ruff clean, wheel build verified).
+- **Current Task**: Completed Feature `ft-04-human-readable-durations-and-metrics` (Smart duration conversions for ms, s, min, and hr in Tempo Trace Timeline, Observability KPI cards, and Execution History table with exact ms preservation).
+- **Progress**: 100% of ft-01, ft-02, ft-03, and ft-04 tasks verified (27/27 tests passing, ruff clean, zero spec drift).
 - **Next Steps**:
   1. Multi-node clustering / distributed scaling.
   2. PyPI publishing release pipeline.
 
 ## 💡 Decisions Log
+- **2026-08-31 - Human-Readable Durations & Observability Metrics**: Implemented smart multi-scale duration conversion (`formatDuration`) across trace timelines, KPI cards, and history tables, ensuring large durations (seconds, minutes, hours) are intuitively parsed at a glance while retaining exact millisecond precision in detailed telemetry.
 - **2026-08-30 - UI Streamlining & Action Menu**: Replaced cluttered top navigation buttons with a single unified `+ Criar ▾` split dropdown and a discreet settings icon (`⚙️`) for Redis maintenance.
 - **2026-08-30 - Queue Management**: Added explicit queue creation (`POST /api/queues`) and deletion (`DELETE /api/queues/{queue}`) with UI modal and instant Redis synchronization.
 - **2026-08-30 - Linear Table Row Rhythm**: Replaced bulky table buttons with compact micro-action button groups (`.btn-action`) that reveal clean borders and hover highlights without cluttering dense tables.
