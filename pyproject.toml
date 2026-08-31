@@ -1,5 +1,5 @@
 [project]
-name = "taskmanager"
+name = "taskmanager-engine"
 version = "0.1.0"
 description = "High-performance background task execution engine with dynamic cron scheduling and Linear-themed SPA dashboard"
 readme = "README.md"
