@@ -36,6 +36,30 @@ class TaskRegistry:
     def set_broker(self, broker: RedisBroker) -> None:
         self._default_broker = broker
 
+    def task(
+        self,
+        name: str | None = None,
+        queue: str = "default",
+        max_retries: int = 3,
+        retry_backoff: float = 2.0,
+        timeout: float | None = None,
+    ) -> Callable[..., Task]:
+        """Decorator to register a function directly to this registry."""
+        def decorator(func: Callable[..., Any]) -> Task:
+            t = Task(
+                func=func,
+                name=name,
+                queue=queue,
+                max_retries=max_retries,
+                retry_backoff=retry_backoff,
+                timeout=timeout,
+                broker=self._default_broker,
+            )
+            self.register(t)
+            return t
+
+        return decorator
+
 
 registry = TaskRegistry()
 

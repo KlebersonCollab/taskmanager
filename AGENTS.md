@@ -36,7 +36,7 @@ When `.specs/project/CONTEXT.md` is missing or contains unfilled placeholders, e
 4. **Extract Conventions**: Analyze existing code for naming conventions, import patterns, and error handling.
 
 ### Step B: Fill & Populate Context
-5. **Populate Context**: Create or update `.specs/project/CONTEXT.md` and codebase artifacts under `.specs/codebase/` (`STACK.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `TECHNICAL-MAP.md`).
+5. **Populate Context**: Create or update `.specs/project/CONTEXT.md` and codebase artifacts under `.specs/codebase/` (`STACK.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `CONCERNS.md`, `TECHNICAL-MAP.md`).
 
 ### Step C: Validate with User
 6. **Present Discovery Summary**: Show the user what was discovered and confirm domain/technical assumptions before proceeding.
@@ -56,7 +56,7 @@ Artifacts are strictly partitioned across 4 distinct layers:
 │   ├── scripts/                    # Governance & sensor scripts (check-spec-drift.js, install-hooks.js)
 │   └── skills/                     # Specialized agent capabilities
 ├── .specs/
-│   ├── codebase/                   # Brownfield reality (STACK, ARCHITECTURE, CONVENTIONS, TECHNICAL-MAP)
+│   ├── codebase/                   # Brownfield reality (STACK, ARCHITECTURE, CONVENTIONS, CONCERNS, TECHNICAL-MAP)
 │   ├── project/                    # Vision & domain context (PROJECT, ROADMAP, STATE, CONTEXT, ADRs/)
 │   ├── features/<feature-id>/      # Active feature specs (plan.md, spec.md, tasks.md)
 │   └── knowledge/                  # Curated patterns/ and anti-patterns/
@@ -71,7 +71,7 @@ Use this matrix to route every user request to the appropriate skill:
 | Intent / Request Type | Primary Skill | Supporting Skills & Tools | Target Artifacts |
 | :--- | :--- | :--- | :--- |
 | **Cross-Session Memory** | `sdd-memory` | `view_file`, `replace_file_content` | `.agents/memory/memory_graph.jsonl` |
-| **Codebase Mapping & Research** | `sdd-explorer` | `search`, `arxiv`, `read_url_content` | `.specs/codebase/` (`STACK.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `TECHNICAL-MAP.md`) |
+| **Codebase Mapping & Research** | `sdd-explorer` | `search`, `arxiv`, `read_url_content` | `.specs/codebase/` (`STACK.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `CONCERNS.md`, `TECHNICAL-MAP.md`) |
 | **Feature Planning & Scoping** | `sdd-planner` | `grill-me` (Phase 0 Align) | `.specs/features/<id>/` (`plan.md`, `spec.md`, `tasks.md`), `.specs/project/ADRs/` |
 | **Stress-testing Requirements** | `grill-me` | `ask_question`, `view_file` | Direct interactive interview → Feeds `sdd-planner` |
 | **Feature Implementation (TDD)** | `sdd-executor` | `refactor`, `debug`, run sensors | Source code, test files, `tasks.md` (Evidence column) |

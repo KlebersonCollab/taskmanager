@@ -2,7 +2,12 @@
 // TaskManager SPA Dashboard Controller (Linear Dark Theme)
 // ==========================================================================
 
-const API_BASE = window.location.origin;
+const getBasePath = () => {
+  const path = window.location.pathname;
+  return path.replace(/\/index\.html$/, "").replace(/\/+$/, "");
+};
+const BASE_PATH = getBasePath();
+const API_BASE = window.location.origin + BASE_PATH;
 let ws = null;
 let currentTab = "overview";
 
@@ -97,7 +102,8 @@ function refreshCurrentTab(isBackground = false) {
 // --- WebSocket Live Stream ---
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/ws/events`;
+  const wsPath = `${BASE_PATH}/ws/events`;
+  const wsUrl = `${protocol}//${window.location.host}${wsPath}`;
 
   const dot = document.getElementById("wsDot");
   const text = document.getElementById("wsText");

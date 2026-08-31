@@ -4,6 +4,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Django](https://img.shields.io/badge/Django-4.2%2B%20%7C%205.0%2B-092E20?style=for-the-badge&logo=django&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7%2B_AOF_Durable-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![UI](https://img.shields.io/badge/UI-Linear_Dark_System-5E6AD2?style=for-the-badge&logo=linear&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
@@ -32,6 +33,156 @@
   - **📜 Loki**: Console de logs de execução, erros e tracebacks capturados.
   - **⏱️ Tempo**: Linha do tempo em cascata (Enqueued ➔ Dequeued ➔ Executing ➔ Finished/Failed).
 - **🎨 Design System Linear Dark**: Interface minimalista com atalho global **`Ctrl+K` (Command Palette)**, menu de ação unificado **`+ Criar ▾`**, e realce suave de linhas.
+- **🔌 Plug-and-Play em Qualquer Framework**: Use como aplicação independente ou embarque facilmente dentro do seu projeto **FastAPI**, **Django** ou **Flask**.
+
+---
+
+## 📦 Como Usar o TaskManager no seu Projeto (Biblioteca / Framework)
+
+Você pode adicionar o TaskManager ao seu projeto Python existente de 3 maneiras:
+
+```bash
+# Instalar no seu projeto:
+pip install taskmanager
+# ou usando UV:
+uv add taskmanager
+```
+
+---
+
+### Método 1: Embutir no FastAPI / Starlette (Sub-Aplicação / Mount)
+
+Monte o dashboard e os endpoints do TaskManager diretamente dentro da sua aplicação FastAPI existente:
+
+```python
+# main.py
+from fastapi import FastAPI
+from taskmanager import TaskManager, task
+
+# 1. Cria sua aplicação principal
+app = FastAPI(title="Minha API Principal")
+
+# 2. Configura a instância do TaskManager apontando para o Redis
+tm = TaskManager(redis_url="redis://localhost:6379/0", prefix="meu_app")
+
+# 3. Define tarefas usando o decorator @task
+@task(name="emails.enviar_boas_vindas", queue="emails", max_retries=3)
+async def enviar_boas_vindas(email: str, nome: str):
+    print(f"Enviando e-mail para {nome} <{email}>...")
+    return {"status": "enviado"}
+
+# 4. Monta o dashboard do TaskManager sob a rota /tasks
+tm.mount_to(app, path="/tasks")
+
+@app.post("/cadastro")
+async def cadastrar_usuario(email: str, nome: str):
+    # Enfileira o job em background
+    job = await enviar_boas_vindas.delay(email=email, nome=nome)
+    return {"mensagem": "Usuário cadastrado!", "job_id": job.id}
+```
+
+*Ao acessar `http://localhost:8000/tasks/`, o dashboard completo estará rodando dentro da sua própria aplicação!*
+
+---
+
+### Método 2: Integração com Django (`taskmanager.contrib.django`)
+
+O TaskManager possui integração de primeira classe com o ecossistema Django:
+
+1. Adicione `'taskmanager.contrib.django'` ao seu `INSTALLED_APPS` em `settings.py`:
+```python
+# settings.py
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    ...,
+    "taskmanager.contrib.django",  # <- Adicione aqui
+    "meu_app_vendas",
+]
+
+# Configurações opcionais do Redis
+TASKMANAGER_REDIS_URL = "redis://localhost:6379/0"
+TASKMANAGER_REDIS_PREFIX = "django_app"
+```
+
+2. Crie um arquivo `tasks.py` dentro dos seus apps Django:
+```python
+# meu_app_vendas/tasks.py
+from taskmanager import task
+
+@task(name="vendas.gerar_fatura", queue="faturamento", max_retries=2)
+async def gerar_fatura(pedido_id: int):
+    # O taskmanager.contrib.django descobre e carrega automaticamente
+    # todos os módulos tasks.py de todos os apps em INSTALLED_APPS!
+    ...
+```
+
+3. Adicione as URLs no seu `urls.py`:
+```python
+# urls.py
+from django.urls import path, include
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("tasks/", include("taskmanager.contrib.django.urls")),  # <- Dashboard
+]
+```
+
+4. Execute workers e schedulers nativamente com `manage.py`:
+```bash
+# Iniciar worker consumindo as filas do Django:
+python manage.py run_worker --queues faturamento,default --concurrency 5
+
+# Iniciar o scheduler de rotinas cron:
+python manage.py run_scheduler
+```
+
+---
+
+### Método 3: Modo Standalone / CLI (Sidecar Desacoplado)
+
+Se preferir manter o TaskManager como um serviço separado (sidecar):
+
+```bash
+# Modo Dev (Dashboard + Worker + Scheduler apontando para seus módulos de tarefas):
+taskmanager dev --modules meu_projeto.tasks --port 8000
+
+# Processos isolados para Produção:
+taskmanager worker --modules meu_projeto.tasks --queues emails,default -c 8
+taskmanager scheduler --modules meu_projeto.tasks
+taskmanager server --port 8080
+```
+
+---
+
+## 📂 Pasta de Exemplos Práticos (`samples/`)
+
+O repositório inclui projetos de exemplo completos e prontos para rodar:
+
+| Exemplo | Descrição | Como Executar |
+| :--- | :--- | :--- |
+| [📁 samples/fastapi_sample](samples/fastapi_sample) | API FastAPI completa montando o TaskManager em `/tasks/` com endpoints de checkout e e-mail. | `uv run python -m samples.fastapi_sample.main` |
+| [📁 samples/django_sample](samples/django_sample) | Projeto Django configurado com `taskmanager.contrib.django`, `tasks.py` e comandos `manage.py`. | `python samples/django_sample/manage.py run_worker` |
+| [📁 samples/standalone_cli](samples/standalone_cli) | Demonstração de uso puro via linha de comando desacoplada. | `uv run taskmanager dev --modules samples.standalone_cli.tasks` |
+
+---
+
+## 🛠️ Como Compilar e Publicar a Biblioteca (PyPI)
+
+Para gerar os pacotes `.whl` (Wheel) e `.tar.gz` (Source Distribution) com todos os arquivos de UI embutidos:
+
+```bash
+# 1. Compilar os artefatos de distribuição
+uv build
+# (ou via python -m build)
+
+# 2. Testar instalação local em modo editável
+pip install -e .
+
+# 3. Publicar no PyPI
+uv publish --token <SEU_TOKEN_PYPI>
+# (ou twine upload dist/*)
+```
 
 ---
 
@@ -76,130 +227,6 @@ Inspecione a linha do tempo exata de execução de cada tarefa com logs capturad
 
 ---
 
-## 🚀 Instalação Rápida (com `uv`)
-
-```bash
-# 1. Clonar o repositório
-git clone https://github.com/usuario/taskmanager.git
-cd taskmanager
-
-# 2. Sincronizar o ambiente virtual e dependências
-uv sync --all-extras
-```
-
----
-
-## 💻 Comandos da CLI
-
-O TaskManager possui 4 comandos principais para desenvolvimento e produção:
-
-### 1. `taskmanager dev` (Modo Tudo-em-Um para Desenvolvimento)
-Inicia o **Servidor API + Dashboard Web**, o **Worker** e o **Scheduler** em um único comando concorrente.
-
-```bash
-# Iniciar ambiente dev com tarefas de exemplo
-uv run taskmanager dev --modules example_tasks
-
-# Customizar porta, filas e guardrails de memória
-uv run taskmanager dev --port 8000 -c 8 --max-memory-mb 512 -m example_tasks
-```
-
----
-
-### 2. `taskmanager worker` (Processo de Worker Dedicado)
-Inicia um processo de worker independente com balanceamento de carga automático via Redis.
-
-```bash
-# Worker de alta concorrência para e-mails
-uv run taskmanager worker -n worker-emails -q emails -c 10 -m example_tasks
-
-# Worker com teto de memória e múltiplas filas
-uv run taskmanager worker -n worker-reports -q reports,default,payments -c 4 --max-memory-mb 1024 -m example_tasks
-```
-
----
-
-### 3. `taskmanager scheduler` (Daemon do Cron Distribuído)
-Inicia o scheduler distribuído com leader locking automático no Redis.
-
-```bash
-uv run taskmanager scheduler -m example_tasks
-```
-
----
-
-### 4. `taskmanager server` (Servidor API & Dashboard Standalone)
-Inicia apenas o servidor web FastAPI e a interface SPA:
-
-```bash
-uv run taskmanager server --host 0.0.0.0 --port 8000 --app-module example_tasks
-```
-
----
-
-## 🐍 Guia do SDK Python
-
-### 1. Definindo Tarefas com `@task`
-
-```python
-# example_tasks.py
-import asyncio
-from taskmanager import task
-
-# Tarefa Assíncrona com Exponential Backoff
-@task(
-    name="emails.send_welcome_email",
-    queue="emails",
-    max_retries=3,
-    retry_backoff=2.0,  # Retries em 2s, 4s, 8s
-    timeout=10.0,
-)
-async def send_welcome_email(email: str, name: str) -> dict:
-    """Dispara e-mail de boas-vindas assincronamente."""
-    await asyncio.sleep(1.0)
-    print(f"📧 E-mail enviado para {name} <{email}>")
-    return {"status": "delivered", "recipient": email}
-
-
-# Tarefa Síncrona Pesada (Executada em Threadpool)
-@task(
-    name="reports.generate_sales_report",
-    queue="reports",
-    max_retries=1,
-    timeout=60.0,
-)
-def generate_sales_report(year: int, month: int, department: str = "Geral") -> dict:
-    """Gera relatório PDF em background sem travar o event loop."""
-    return {"file": f"/exports/{department}_{year}_{month:02d}.pdf"}
-```
-
-### 2. Enfileirando Jobs via Código
-
-```python
-# enqueue_examples.py
-import asyncio
-from example_tasks import send_welcome_email, generate_sales_report
-
-async def main():
-    # 1. Execução Imediata (.delay)
-    job1 = await send_welcome_email.delay("cliente@empresa.com", "Carlos Silva")
-    print(f"Job enfileirado: {job1.id}")
-
-    # 2. Execução Agendada / Delay (.apply_async)
-    job2 = await generate_sales_report.apply_async(
-        kwargs={"year": 2026, "month": 8, "department": "Financeiro"},
-        delay=30.0,  # Executa após 30 segundos
-        queue="reports",
-        priority=1,
-    )
-    print(f"Job agendado: {job2.id}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
----
-
 ## 🐳 Stack Docker & Docker Compose
 
 Suba o cluster completo em contêineres com um único comando:
@@ -224,7 +251,7 @@ docker compose up -d --scale worker-emails=3
 uv run pytest -v tests/
 
 # Executar linter de código
-uv run ruff check taskmanager tests example_tasks.py enqueue_examples.py scripts/
+uv run ruff check taskmanager tests samples
 
 # Sensor de Spec Drift (SDD)
 node .agents/scripts/check-spec-drift.js

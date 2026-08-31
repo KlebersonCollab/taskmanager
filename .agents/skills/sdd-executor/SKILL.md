@@ -16,17 +16,18 @@ You are the **Executor / Implementer** in the SDD workflow. You translate atomic
 ### 1. Knowledge Verification Chain
 Before writing a single line of code, you MUST follow this hierarchy:
 1. **Existing Patterns**: Search the codebase for similar logic. Reuse before reinventing.
-2. **Project Specs**: Read `TECHNICAL-MAP.md` and `CONVENTIONS.md`.
-3. **Task Context**: Read `spec.md`, `plan.md`, and the specific task in `tasks.md`.
-4. **Large Tasks**: If the task is large, ask sdd-planner to replan the task by breaking it into several smaller tasks.
-5. **Flag Uncertainty**: If you are unsure about an API or pattern, STOP and ask.
+2. **Project Specs & Maps**: Read `TECHNICAL-MAP.md`, `CONVENTIONS.md`, and `CONCERNS.md`.
+3. **Design System Tokens (UI Tasks)**: If the task touches UI/Frontend, read `DESIGN.md` at project root.
+4. **Task Context**: Read `spec.md`, `plan.md`, and the specific task in `tasks.md`.
+5. **Large Tasks**: If the task is large or touches >3 files, trigger the Safety Valve and ask `sdd-planner` to replan.
+6. **Flag Uncertainty**: If you are unsure about an API or pattern, STOP and research or ask.
 
 ### 2. The Safety Valve
 While executing, monitor for complexity drift:
 - If a task touches >3 files unexpectedly.
-- If you touch a file listed in the **Critical Risks** section of `TECHNICAL-MAP.md`.
+- If you touch a file listed in the **Critical Risks** section of `TECHNICAL-MAP.md` / `CONCERNS.md`.
 - If structural design changes are needed.
-**Action**: Pause execution and request a re-plan from the sdd-planner.
+**Action**: Pause execution and request a re-plan from `sdd-planner`.
 
 ### 3. Atomic Execution (AgentCoder & SWE-agent SOTA)
 For each task:
@@ -34,9 +35,9 @@ For each task:
 2. **ACI Surgical Inspection**: Read target code in slices of 100–300 lines (`view_file` with `StartLine`/`EndLine`) before editing.
 3. **TDD Cycle & Test Immutability**:
    - Run existing tests to verify baseline failure.
-   - **Fix Production Code ONLY**: Never alter test assertions or remove test cases to bypass failures (AgentCoder Protocol).
+   - **Fix Production Code ONLY**: Never alter test assertions or remove test cases to bypass failures (AgentCoder Protocol — Prohibition 9).
    - Apply minimal clean code using contiguous block replacements (`replace_file_content`).
-4. **Sensor Verification**: Run build, linter, and test suite sensors.
+4. **Sensor Verification**: Run build, linter, test suite, and Pre-Commit Spec Drift (`node .agents/scripts/check-spec-drift.js`) sensors.
 5. **Commit**: Use atomic commits (e.g., `feat: [description] (TASK-XX)`).
 6. **Log Evidence**: Update the `Evidence` column in `tasks.md` with the commit hash and sensor pass snippet.
 

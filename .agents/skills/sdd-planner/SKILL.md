@@ -51,8 +51,10 @@ Actions to do:
 ### 1 - Specification Core
 - **Domain Alignment**: All requirements must use the exact terms defined in `CONTEXT.md`.
 - **User Stories**: `As a [user], I want [action], so that [value]`.
-- **Traceable IDs**: Every Requirement must have an ID (e.g., `FR-1`, `AC-1`).
-- **Acceptance Criteria**: Defined in `Given/When/Then` format.
+- **Business Rules & Invariants**: Declarative rules (`BR-1`, `BR-2`) defining boundaries and forbidden states.
+- **Traceable IDs**: Every Requirement must have an ID (e.g., `FR-1`, `BR-1`, `AC-1`).
+- **Structured Acceptance Criteria**: Categorized into Happy Path, Input/Validation, and Exceptions/Resilience (`Given/When/Then`).
+- **Test Data Matrix**: Boundary inputs and edge values documented for deterministic testing.
 
 ### 2 - Technical Architecture
 - **Component Map**: Sequence diagrams or component hierarchy.
@@ -67,7 +69,7 @@ Actions to do:
 - **Strict Schema Contract**: All `tasks.md` files MUST follow a strict 7-column table schema:
   - `Status`: `[ ]` (Pending) or `[x]` (Verified Complete).
   - `ID`: Sequential traceable identifier (`TASK-01`, `TASK-02`, ...).
-  - `Type`: Atomic task category (`test` | `feat` | `fix` | `refactor` | `docs` | `rules` | `skill`).
+  - `Type`: Atomic task category (`test` | `feat` | `fix` | `refactor` | `docs` | `rules` | `skill` | `review`).
   - `Description`: Clear, single-responsibility action statement.
   - `Target Files`: Concrete file paths (relative to repo root). Maximum 1–3 files per task.
   - `Dependencies`: Explicit task IDs that must complete first (`TASK-XX` or `None`).

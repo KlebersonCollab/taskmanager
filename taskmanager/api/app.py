@@ -57,6 +57,7 @@ class EnqueueTaskRequest(BaseModel):
 def create_app(
     broker: RedisBroker | None = None,
     task_reg: TaskRegistry | None = None,
+    root_path: str = "",
 ) -> FastAPI:
     """Factory creating configured FastAPI application."""
     if broker is None:
@@ -84,6 +85,7 @@ def create_app(
         description="Background task execution engine & real-time dashboard API",
         version="0.1.0",
         lifespan=lifespan,
+        root_path=root_path,
     )
 
     app.add_middleware(

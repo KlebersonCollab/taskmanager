@@ -34,6 +34,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["taskmanager*"]
 
+[tool.setuptools.package-data]
+"taskmanager.ui" = ["*.html", "*.css", "*.js", "*.svg", "*.ico", "*.png"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
