@@ -149,7 +149,11 @@ function handleLiveEvent(evt) {
   if (type === "job:enqueued") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) enfileirado na fila [${data.queue}]`;
   else if (type === "job:delayed") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) agendado com delay na fila [${data.queue}]`;
   else if (type === "job:active") summary = `Worker ${data.worker_id?.substring(0, 8)} executando job ${data.job_id?.substring(0, 8)} (${data.task || ""})`;
-  else if (type === "job:completed") summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${data.duration !== undefined ? data.duration.toFixed(2) : "0.00"}s)`;
+  else if (type === "job:completed") {
+    const durMs = data.duration !== undefined && data.duration !== null ? data.duration * 1000 : null;
+    const durFormatted = durMs !== null ? formatDuration(durMs) : "0.00s";
+    summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${durFormatted})`;
+  }
   else if (type === "job:failed") summary = `Job ${data.job_id?.substring(0, 8)} FALHOU -> DLQ [${data.queue}]: ${data.error || "Erro"}`;
   else if (type === "job:retrying") summary = `Job ${data.job_id?.substring(0, 8)} agendado para retry (${data.retry_count}/${data.max_retries})`;
   else if (type === "job:cancelled") summary = `Job ${data.job_id?.substring(0, 8)} cancelado na fila [${data.queue}]`;
@@ -968,6 +972,39 @@ function timeUntil(timestamp) {
   return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDuration(ms, options = {}) {
+  if (ms === null || ms === undefined || isNaN(ms)) return options.fallback || "--";
+  const num = Number(ms);
+  if (num <= 0) return "0.0 ms";
+
+  const { includeExact = false } = options;
+
+  if (num < 1000) {
+    return `${num.toFixed(1)} ms`;
+  }
+
+  const totalSec = num / 1000;
+  const exactStr = includeExact ? ` (${num.toFixed(1)}ms)` : "";
+
+  if (num < 60000) {
+    return `${totalSec.toFixed(2)}s${exactStr}`;
+  }
+
+  if (num < 3600000) {
+    const mins = Math.floor(totalSec / 60);
+    const remSec = (totalSec % 60).toFixed(1);
+    const secStr = Number(remSec) < 10 ? `0${remSec}` : remSec;
+    return `${mins}m ${secStr}s${exactStr}`;
+  }
+
+  const hours = Math.floor(totalSec / 3600);
+  const remMins = Math.floor((totalSec % 3600) / 60);
+  const remSec = Math.floor(totalSec % 60);
+  const minStr = remMins < 10 ? `0${remMins}` : remMins;
+  const secStr = remSec < 10 ? `0${remSec}` : remSec;
+  return `${hours}h ${minStr}m ${secStr}s${exactStr}`;
+}
+
 // --- LGTM Observability & Execution History ---
 
 let historySearchTimer = null;
@@ -992,11 +1029,25 @@ async function fetchObservabilityMetrics() {
       if (rateSub) rateSub.innerText = `${m.failed_count || 0} falhas de ${m.total_executions || 0} total`;
     }
 
+    const avgMs = m.avg_duration_ms !== undefined && m.avg_duration_ms !== null ? Number(m.avg_duration_ms) : 0;
     const avgElem = document.getElementById("obs-avg-duration");
-    if (avgElem) avgElem.innerText = `${m.avg_duration_ms || 0} ms`;
+    const avgSub = document.getElementById("obs-avg-duration-sub");
+    if (avgElem) {
+      avgElem.innerText = formatDuration(avgMs);
+      if (avgSub) {
+        avgSub.innerText = avgMs >= 1000 ? `${avgMs.toFixed(1)} ms — Média de execução` : "Tempo médio de execução";
+      }
+    }
 
+    const p95Ms = m.p95_duration_ms !== undefined && m.p95_duration_ms !== null ? Number(m.p95_duration_ms) : 0;
     const p95Elem = document.getElementById("obs-p95-duration");
-    if (p95Elem) p95Elem.innerText = `${m.p95_duration_ms || 0} ms`;
+    const p95Sub = document.getElementById("obs-p95-duration-sub");
+    if (p95Elem) {
+      p95Elem.innerText = formatDuration(p95Ms);
+      if (p95Sub) {
+        p95Sub.innerText = p95Ms >= 1000 ? `${p95Ms.toFixed(1)} ms — 95% das execuções` : "95% das execuções abaixo";
+      }
+    }
 
     const tpElem = document.getElementById("obs-throughput");
     if (tpElem) tpElem.innerText = `${m.throughput_per_minute || 0} / min`;
@@ -1034,7 +1085,17 @@ async function fetchHistory() {
       else if (j.status === "active") badgeClass = "badge-active";
       else if (j.status === "delayed" || j.status === "retrying") badgeClass = "badge-delayed";
 
-      const durationStr = j.duration !== null && j.duration !== undefined ? `${(j.duration * 1000).toFixed(1)} ms` : "--";
+      let durationHtml = "--";
+      if (j.duration !== null && j.duration !== undefined) {
+        const ms = j.duration * 1000;
+        const humanStr = formatDuration(ms);
+        const msStr = `${ms.toFixed(1)} ms`;
+        if (ms >= 1000) {
+          durationHtml = `<div style="font-weight: 500;">${humanStr}</div><div style="font-size: 11px; color: var(--ink-subtle);">${msStr}</div>`;
+        } else {
+          durationHtml = `<div>${humanStr}</div>`;
+        }
+      }
       const timeStr = j.completed_at ? timeAgo(j.completed_at) : (j.started_at ? `Iniciado ${timeAgo(j.started_at)}` : timeAgo(j.created_at));
 
       return `
@@ -1043,7 +1104,7 @@ async function fetchHistory() {
           <td><code style="cursor: pointer; text-decoration: underline;" onclick="openJobTraceModal('${j.id}')">${j.id.substring(0, 8)}</code></td>
           <td><strong>${escapeHtml(j.task_name)}</strong></td>
           <td><code>${escapeHtml(j.queue)}</code></td>
-          <td>${durationStr}</td>
+          <td>${durationHtml}</td>
           <td>${escapeHtml(j.worker_id || "--")}</td>
           <td>${timeStr}</td>
           <td>
@@ -1089,11 +1150,12 @@ async function openJobTraceModal(jobId) {
     }
 
     if (job.completed_at) {
-      const dur = job.duration !== null ? `${(job.duration * 1000).toFixed(1)}ms` : "";
+      const durMs = job.duration !== null && job.duration !== undefined ? job.duration * 1000 : null;
+      const durFormatted = durMs !== null ? formatDuration(durMs, { includeExact: true }) : "";
       steps.push({
         name: job.status === "failed" ? "Falhou (DLQ)" : "Finalizado",
         time: job.completed_at,
-        meta: job.status === "failed" ? `Erro: ${job.error || 'Falha'} (Duração: ${dur})` : `Concluído com sucesso em ${dur}`,
+        meta: job.status === "failed" ? `Erro: ${job.error || 'Falha'} (Duração: ${durFormatted})` : `Concluído com sucesso em ${durFormatted}`,
         status: job.status === "failed" ? "failed" : "completed"
       });
     }
