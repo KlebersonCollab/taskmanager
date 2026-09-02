@@ -1,6 +1,6 @@
 [project]
 name = "taskmanager-engine"
-version = "0.1.3"
+version = "0.2.1"
 description = "High-performance background task execution engine with dynamic cron scheduling and Linear-themed SPA dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,6 +12,9 @@ dependencies = [
     "croniter>=2.0.0",
     "psutil>=5.9.0",
     "fakeredis>=2.21.0",
+    "httpx>=0.27.0",
+    "websockets>=12.0",
+
 ]
 
 [project.optional-dependencies]
