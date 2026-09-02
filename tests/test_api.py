@@ -302,3 +302,90 @@ async def test_api_lifespan_scheduler_execution(app_setup):
         assert fetched is not None
         assert fetched.task_name == "api_ping"
 
+
+@pytest.mark.asyncio
+async def test_api_job_progress_and_live_events(app_setup):
+    app, broker, reg = app_setup
+    from taskmanager.core.task import TaskContext
+
+    @task(name="api_progress_task", queue="default", broker=broker)
+    async def api_progress_task(steps: int, ctx: TaskContext):
+        for i in range(steps):
+            await ctx.update_progress(
+                percent=((i + 1) / steps) * 100.0,
+                message=f"Step {i+1}/{steps} complete",
+            )
+            await ctx.append_log(f"Log event for step {i+1}")
+        return {"status": "ok", "steps": steps}
+
+    reg.register(api_progress_task)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Enqueue task via REST API
+        res = await client.post(
+            "/api/tasks/api_progress_task/enqueue",
+            json={"args": [3]},
+        )
+        assert res.status_code == 200
+        job_id = res.json()["id"]
+
+        # 2. Worker executes task
+        from taskmanager.worker.worker import Worker
+        worker = Worker(queues=["default"], concurrency=1, broker=broker, task_registry=reg)
+        worker_task = asyncio.create_task(worker.start())
+
+        await asyncio.sleep(0.1)
+        await worker.stop()
+        worker_task.cancel()
+
+        # 3. Verify get job by ID returns 100% progress and logs
+        res_job = await client.get(f"/api/jobs/{job_id}")
+        assert res_job.status_code == 200
+        job_data = res_job.json()
+        assert job_data["status"] == "completed"
+        assert job_data["progress"] == 100.0
+        assert any("Log event for step 3" in log for log in job_data["logs"])
+
+        # 4. Verify history endpoint contains progress
+        res_hist = await client.get("/api/jobs/history")
+        assert res_hist.status_code == 200
+        hist_jobs = res_hist.json()
+        target = next((j for j in hist_jobs if j["id"] == job_id), None)
+        assert target is not None
+        assert target["progress"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_api_timeseries_metrics_endpoint(app_setup):
+    app, broker, _ = app_setup
+    job = Job(task_name="api_ping", queue="default", status=JobStatus.COMPLETED)
+    job.started_at = time.time() - 10
+    job.completed_at = time.time()
+    job.duration = 0.08
+    await broker.save_job(job)
+    await broker.redis.zadd(broker._key_history(), {job.id: job.completed_at})
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.get("/api/metrics/timeseries?window_minutes=30")
+        assert res.status_code == 200
+        data = res.json()
+        assert "throughput_series" in data
+        assert "latency_histogram" in data
+        assert "latency_percentiles" in data
+        assert "task_breakdown" in data
+        assert data["total_executions"] >= 1
+        assert data["window_minutes"] == 30
+
+        # Test bounds clamping (< 5 clamped to 5, > 1440 clamped to 1440)
+        res_min = await client.get("/api/metrics/timeseries?window_minutes=-5")
+        assert res_min.status_code == 200
+        assert res_min.json()["window_minutes"] == 5
+
+        res_max = await client.get("/api/metrics/timeseries?window_minutes=99999")
+        assert res_max.status_code == 200
+        assert res_max.json()["window_minutes"] == 1440
+
+
+

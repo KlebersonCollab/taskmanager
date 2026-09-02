@@ -130,3 +130,36 @@ async def test_worker_resource_backpressure(test_setup):
 
     await worker.stop()
     worker_task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_worker_task_context_progress_and_logs(test_setup):
+    from taskmanager.core.task import TaskContext
+
+    broker, reg = test_setup
+
+    @task(name="batch_import_task", broker=broker)
+    async def batch_import_task(total: int, ctx: TaskContext) -> str:
+        await ctx.update_progress(25.0, "Carregando dados...")
+        await ctx.append_log("Arquivo aberto com sucesso.")
+        await ctx.update_progress(75.0, "Gravando registros...")
+        await ctx.append_log("75% dos itens importados.")
+        return f"Importados {total} itens"
+
+    reg.register(batch_import_task)
+    job = await batch_import_task.delay(100)
+
+    worker = Worker(queues=["default"], concurrency=1, broker=broker, task_registry=reg)
+    worker_task = asyncio.create_task(worker.start())
+
+    await asyncio.sleep(0.1)
+    await worker.stop()
+    worker_task.cancel()
+
+    res = await broker.get_job(job.id)
+    assert res.status == JobStatus.COMPLETED
+    assert res.result == "Importados 100 itens"
+    assert res.progress == 100.0  # Completed jobs reach 100%
+    assert any("Arquivo aberto com sucesso." in line for line in res.logs)
+    assert any("75% dos itens importados." in line for line in res.logs)
+

@@ -167,9 +167,67 @@ class RedisBroker:
                     return job
         return None
 
+    async def update_job_progress(
+        self, job_id: str, progress: float, message: str | None = None
+    ) -> bool:
+        """Updates real-time execution progress (0-100%) and status message for an active job."""
+        job = await self.get_job(job_id)
+        if not job:
+            return False
+        try:
+            clamped_progress = max(0.0, min(100.0, float(progress)))
+        except (ValueError, TypeError):
+            clamped_progress = 0.0
+
+        job.progress = round(clamped_progress, 1)
+        if message is not None:
+            job.progress_message = message
+        await self.save_job(job)
+
+        await self.publish_event(
+            "job:progress",
+            {
+                "job_id": job.id,
+                "progress": job.progress,
+                "message": job.progress_message,
+                "queue": job.queue,
+                "task": job.task_name,
+                "worker_id": job.worker_id,
+            },
+        )
+        return True
+
+    async def append_job_log(self, job_id: str, line: str) -> bool:
+        """Appends a log line to job execution logs and broadcasts live log event."""
+        job = await self.get_job(job_id)
+        if not job:
+            return False
+        formatted_line = f"[{time.strftime('%H:%M:%S')}] {line}"
+        job.logs.append(formatted_line)
+        await self.save_job(job)
+
+        await self.publish_event(
+            "job:log",
+            {
+                "job_id": job.id,
+                "line": formatted_line,
+                "queue": job.queue,
+                "task": job.task_name,
+                "worker_id": job.worker_id,
+            },
+        )
+        return True
+
     async def mark_completed(self, job: Job, result: Any) -> None:
         """Marks a job as completed and stores the execution result."""
+        latest = await self.get_job(job.id)
+        if latest:
+            job.logs = latest.logs
+            if latest.progress_message:
+                job.progress_message = latest.progress_message
+
         job.status = JobStatus.COMPLETED
+        job.progress = 100.0
         job.completed_at = time.time()
         job.duration = round((job.completed_at - (job.started_at or job.created_at)), 4)
         job.result = result
@@ -195,6 +253,12 @@ class RedisBroker:
 
     async def mark_failed(self, job: Job, error: str, traceback_str: str) -> None:
         """Handles job failure: retries with exponential backoff or routes to DLQ."""
+        latest = await self.get_job(job.id)
+        if latest:
+            job.logs = latest.logs
+            if latest.progress_message:
+                job.progress_message = latest.progress_message
+
         if job.worker_id:
             await self.redis.srem(self._key_active(job.worker_id), job.id)
 
@@ -484,6 +548,172 @@ class RedisBroker:
             "avg_duration_ms": avg_duration_ms,
             "p95_duration_ms": p95_duration_ms,
             "throughput_per_minute": last_minute_runs,
+        }
+
+    async def get_timeseries_metrics(
+        self, window_minutes: int = 30, reference_time: float | None = None
+    ) -> dict[str, Any]:
+        """Calculates multi-series throughput, latency histogram, percentiles and task breakdown."""
+        win_min = max(5, min(1440, int(window_minutes)))
+        win_sec = win_min * 60
+        now = reference_time if reference_time is not None else time.time()
+        start_time = now - win_sec
+
+        # Determine bucket size in seconds
+        if win_min <= 15:
+            bucket_sec = 60
+        elif win_min <= 30:
+            bucket_sec = 60
+        elif win_min <= 60:
+            bucket_sec = 120
+        elif win_min <= 180:
+            bucket_sec = 300
+        else:
+            bucket_sec = 1800
+
+        num_buckets = max(1, int(win_sec / bucket_sec))
+        buckets: list[dict[str, Any]] = []
+        for i in range(num_buckets):
+            b_start = start_time + (i * bucket_sec)
+            try:
+                time_label = time.strftime("%H:%M", time.localtime(max(0.0, b_start)))
+            except Exception:
+                time_label = "--:--"
+            buckets.append(
+                {
+                    "timestamp": b_start,
+                    "time_label": time_label,
+                    "completed": 0,
+                    "failed": 0,
+                    "total": 0,
+                }
+            )
+
+        # Retrieve job IDs in window from history zset
+        history_key = self._key_history()
+        job_ids = await self.redis.zrangebyscore(history_key, min=start_time, max=now)
+
+        completed_count = 0
+        failed_count = 0
+        durations_ms: list[float] = []
+        task_stats: dict[str, dict[str, Any]] = {}
+
+        # Latency buckets
+        histogram_defs = [
+            {"label": "< 50ms", "min": 0, "max": 50, "count": 0},
+            {"label": "50-200ms", "min": 50, "max": 200, "count": 0},
+            {"label": "200-500ms", "min": 200, "max": 500, "count": 0},
+            {"label": "500ms-1s", "min": 500, "max": 1000, "count": 0},
+            {"label": "1s-5s", "min": 1000, "max": 5000, "count": 0},
+            {"label": "> 5s", "min": 5000, "max": float("inf"), "count": 0},
+        ]
+
+        for j_id in job_ids:
+            job = await self.get_job(j_id)
+            if not job or not job.completed_at:
+                continue
+
+            # Bucket index
+            b_idx = int((job.completed_at - start_time) / bucket_sec)
+            if 0 <= b_idx < len(buckets):
+                if job.status == JobStatus.COMPLETED:
+                    buckets[b_idx]["completed"] += 1
+                elif job.status == JobStatus.FAILED:
+                    buckets[b_idx]["failed"] += 1
+                buckets[b_idx]["total"] += 1
+
+            if job.status == JobStatus.COMPLETED:
+                completed_count += 1
+            elif job.status == JobStatus.FAILED:
+                failed_count += 1
+
+            dur_ms = (job.duration * 1000) if job.duration is not None else 0.0
+            if dur_ms >= 0:
+                durations_ms.append(dur_ms)
+                for h in histogram_defs:
+                    if h["min"] <= dur_ms < h["max"]:
+                        h["count"] += 1
+                        break
+
+            # Group task stats
+            t_name = job.task_name or "unknown"
+            if t_name not in task_stats:
+                task_stats[t_name] = {
+                    "task_name": t_name,
+                    "total": 0,
+                    "completed": 0,
+                    "failed": 0,
+                    "durations": [],
+                }
+            task_stats[t_name]["total"] += 1
+            if job.status == JobStatus.COMPLETED:
+                task_stats[t_name]["completed"] += 1
+            elif job.status == JobStatus.FAILED:
+                task_stats[t_name]["failed"] += 1
+            if job.duration is not None:
+                task_stats[t_name]["durations"].append(dur_ms)
+
+        total_runs = completed_count + failed_count
+        success_rate = round((completed_count / total_runs * 100), 1) if total_runs > 0 else 100.0
+
+        # Percentiles
+        if durations_ms:
+            sorted_d = sorted(durations_ms)
+            p50 = round(sorted_d[int(len(sorted_d) * 0.50)], 1)
+            p75 = round(sorted_d[int(len(sorted_d) * 0.75)], 1)
+            p90 = round(sorted_d[min(int(len(sorted_d) * 0.90), len(sorted_d) - 1)], 1)
+            p95 = round(sorted_d[min(int(len(sorted_d) * 0.95), len(sorted_d) - 1)], 1)
+            p99 = round(sorted_d[min(int(len(sorted_d) * 0.99), len(sorted_d) - 1)], 1)
+            avg = round(sum(sorted_d) / len(sorted_d), 1)
+        else:
+            p50 = p75 = p90 = p95 = p99 = avg = 0.0
+
+        # Format histogram
+        total_dur_count = len(durations_ms) or 1
+        histogram_result = [
+            {
+                "bucket": h["label"],
+                "count": h["count"],
+                "percentage": round((h["count"] / total_dur_count) * 100, 1),
+            }
+            for h in histogram_defs
+        ]
+
+        # Format task breakdown
+        breakdown_result = []
+        for t in task_stats.values():
+            t_total = t["total"]
+            t_succ = round((t["completed"] / t_total * 100), 1) if t_total > 0 else 100.0
+            t_avg = round(sum(t["durations"]) / len(t["durations"]), 1) if t["durations"] else 0.0
+            breakdown_result.append(
+                {
+                    "task_name": t["task_name"],
+                    "total": t_total,
+                    "completed": t["completed"],
+                    "failed": t["failed"],
+                    "success_rate_percent": t_succ,
+                    "avg_duration_ms": t_avg,
+                }
+            )
+        breakdown_result.sort(key=lambda x: x["total"], reverse=True)
+
+        return {
+            "window_minutes": win_min,
+            "total_executions": total_runs,
+            "completed_count": completed_count,
+            "failed_count": failed_count,
+            "success_rate_percent": success_rate,
+            "throughput_series": buckets,
+            "latency_histogram": histogram_result,
+            "latency_percentiles": {
+                "p50_ms": p50,
+                "p75_ms": p75,
+                "p90_ms": p90,
+                "p95_ms": p95,
+                "p99_ms": p99,
+                "avg_ms": avg,
+            },
+            "task_breakdown": breakdown_result,
         }
 
     # --- Real-Time Pub/Sub Events ---

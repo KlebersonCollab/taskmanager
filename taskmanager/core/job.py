@@ -34,6 +34,8 @@ class Job(BaseModel):
     started_at: float | None = None
     completed_at: float | None = None
     duration: float | None = None
+    progress: float = 0.0
+    progress_message: str | None = None
     logs: list[str] = Field(default_factory=list)
     result: Any = None
     error: str | None = None

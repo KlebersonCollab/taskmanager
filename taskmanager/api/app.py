@@ -327,6 +327,11 @@ def create_app(
         """Returns LGTM-style aggregated performance metrics (p95 latency, success rate, throughput)."""
         return await broker.get_observability_metrics()
 
+    @app.get("/api/metrics/timeseries")
+    async def get_timeseries_metrics_endpoint(window_minutes: int = 30):
+        """Returns time-series throughput buckets, latency histogram, percentiles and task breakdown."""
+        return await broker.get_timeseries_metrics(window_minutes=window_minutes)
+
     @app.get("/api/jobs/{job_id}")
     async def get_job_by_id(job_id: str):
         job = await broker.get_job(job_id)

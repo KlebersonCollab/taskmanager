@@ -1,13 +1,17 @@
 # Project State & Context
 
 ## 🏁 Session Status
-- **Current Task**: Completed Feature `ft-04-human-readable-durations-and-metrics` (Smart duration conversions for ms, s, min, and hr in Tempo Trace Timeline, Observability KPI cards, and Execution History table with exact ms preservation).
-- **Progress**: 100% of ft-01, ft-02, ft-03, and ft-04 tasks verified (27/27 tests passing, ruff clean, zero spec drift).
+- **Current Task**: Implementing Feature `ft-07-webhooks-and-alert-channels` (Webhooks & Multi-Platform Alert Channels: Slack, Discord, Microsoft Teams, Telegram, and generic HTTP Webhooks triggered on DLQ failures).
+- **Progress**: Planning approved (plan.md, spec.md, tasks.md initialized with 8 MetaGPT tasks).
 - **Next Steps**:
-  1. Multi-node clustering / distributed scaling.
-  2. PyPI publishing release pipeline.
+  1. Execute TASK-01 (Test scaffolding for AlertChannel, formatters, and dispatcher).
+  2. Execute TASK-02 through TASK-06 (AlertChannel model, multi-platform formatters, broker dispatch, API endpoints, UI modal & test ping).
+  3. Execute TASK-07 and TASK-08 (Integration tests and review sensors).
 
 ## 💡 Decisions Log
+- **2026-09-01 - Native Observability & Canvas Time-Series**: Implemented zero-external-dependency time-series metrics (`GET /api/metrics/timeseries`) with throughput buckets (completed/failed area curves), latency histogram, P50/P90/P95/P99 percentiles, and per-task breakdown ranking, rendered via pure DPI-scaled HTML5 Canvas adhering to Linear Dark design system.
+- **2026-09-01 - Real-Time Job Progress & Live Log Streaming**: Implemented `TaskContext` with `update_progress` and `append_log`, auto-injected into worker tasks. Subprocess `system.run_command` streams `stdout`/`stderr` line-by-line via async StreamReader. Linear Dark dashboard updates animated progress bars in History table and streams live logs directly into Loki modal.
+- **2026-08-31 - Human-Readable Durations & Observability Metrics**: Implemented smart multi-scale duration conversion (`formatDuration`) across trace timelines, KPI cards, and history tables, ensuring large durations (seconds, minutes, hours) are intuitively parsed at a glance while retaining exact millisecond precision in detailed telemetry.
 - **2026-08-31 - Human-Readable Durations & Observability Metrics**: Implemented smart multi-scale duration conversion (`formatDuration`) across trace timelines, KPI cards, and history tables, ensuring large durations (seconds, minutes, hours) are intuitively parsed at a glance while retaining exact millisecond precision in detailed telemetry.
 - **2026-08-30 - UI Streamlining & Action Menu**: Replaced cluttered top navigation buttons with a single unified `+ Criar ▾` split dropdown and a discreet settings icon (`⚙️`) for Redis maintenance.
 - **2026-08-30 - Queue Management**: Added explicit queue creation (`POST /api/queues`) and deletion (`DELETE /api/queues/{queue}`) with UI modal and instant Redis synchronization.

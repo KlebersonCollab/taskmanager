@@ -96,6 +96,7 @@ function refreshCurrentTab(isBackground = false) {
   if (currentTab === "history") {
     if (!isBackground) fetchHistory();
     fetchObservabilityMetrics();
+    fetchTimeseriesMetrics();
   }
 }
 
@@ -149,10 +150,56 @@ function handleLiveEvent(evt) {
   if (type === "job:enqueued") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) enfileirado na fila [${data.queue}]`;
   else if (type === "job:delayed") summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) agendado com delay na fila [${data.queue}]`;
   else if (type === "job:active") summary = `Worker ${data.worker_id?.substring(0, 8)} executando job ${data.job_id?.substring(0, 8)} (${data.task || ""})`;
+  else if (type === "job:progress") {
+    const pct = data.progress !== undefined ? data.progress : 0;
+    const msg = data.message ? ` — ${data.message}` : "";
+    summary = `Job ${data.job_id?.substring(0, 8)} (${data.task || ""}) progresso: ${pct}%${msg}`;
+
+    // Live update trace modal if currently open for this job
+    if (window._activeTraceJobId === data.job_id) {
+      const pctElem = document.getElementById("trace-progress-pct");
+      const barElem = document.getElementById("trace-progress-bar");
+      const msgElem = document.getElementById("trace-progress-msg");
+      if (pctElem) pctElem.innerText = `${pct}%`;
+      if (barElem) {
+        barElem.style.width = `${pct}%`;
+        barElem.className = "progress-bar-fill active";
+      }
+      if (msgElem && data.message) msgElem.innerText = data.message;
+    }
+  }
+  else if (type === "job:log") {
+    summary = `Job ${data.job_id?.substring(0, 8)}: ${data.line || ""}`;
+
+    // Live stream log line into modal if currently open
+    if (window._activeTraceJobId === data.job_id && data.line) {
+      const logsConsole = document.getElementById("lgtm-logs-console");
+      if (logsConsole) {
+        const isErr = data.line.includes("[ERROR]") || data.line.includes("[STDERR]") || data.line.includes("Falha");
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.innerHTML = `<span class="${isErr ? 'log-err' : 'log-msg'}">${escapeHtml(data.line)}</span>`;
+        logsConsole.appendChild(entry);
+        logsConsole.scrollTop = logsConsole.scrollHeight;
+      }
+    }
+  }
   else if (type === "job:completed") {
     const durMs = data.duration !== undefined && data.duration !== null ? data.duration * 1000 : null;
     const durFormatted = durMs !== null ? formatDuration(durMs) : "0.00s";
     summary = `Job ${data.job_id?.substring(0, 8)} completado com sucesso (${durFormatted})`;
+
+    if (window._activeTraceJobId === data.job_id) {
+      const pctElem = document.getElementById("trace-progress-pct");
+      const barElem = document.getElementById("trace-progress-bar");
+      const msgElem = document.getElementById("trace-progress-msg");
+      if (pctElem) pctElem.innerText = "100%";
+      if (barElem) {
+        barElem.style.width = "100%";
+        barElem.className = "progress-bar-fill completed";
+      }
+      if (msgElem) msgElem.innerText = "Concluído com sucesso";
+    }
   }
   else if (type === "job:failed") summary = `Job ${data.job_id?.substring(0, 8)} FALHOU -> DLQ [${data.queue}]: ${data.error || "Erro"}`;
   else if (type === "job:retrying") summary = `Job ${data.job_id?.substring(0, 8)} agendado para retry (${data.retry_count}/${data.max_retries})`;
@@ -1056,6 +1103,192 @@ async function fetchObservabilityMetrics() {
   }
 }
 
+let currentObsTimeWindow = 30;
+let cachedTimeseriesData = null;
+
+function setTimeWindow(minutes) {
+  currentObsTimeWindow = Number(minutes);
+  document.querySelectorAll(".time-window-pill").forEach(pill => {
+    pill.classList.toggle("active", Number(pill.getAttribute("data-window")) === currentObsTimeWindow);
+  });
+  fetchTimeseriesMetrics();
+}
+
+async function fetchTimeseriesMetrics() {
+  try {
+    const res = await fetch(`${API_BASE}/api/metrics/timeseries?window_minutes=${currentObsTimeWindow}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    cachedTimeseriesData = data;
+
+    renderLatencyHistogram(data.latency_histogram, data.latency_percentiles);
+    renderThroughputCanvas(data.throughput_series);
+  } catch (err) {
+    console.error("Failed to fetch timeseries metrics", err);
+  }
+}
+
+function renderLatencyHistogram(histogram, percentiles) {
+  if (percentiles) {
+    const p50Elem = document.getElementById("hist-p50");
+    const p90Elem = document.getElementById("hist-p90");
+    const p95Elem = document.getElementById("hist-p95");
+    const p99Elem = document.getElementById("hist-p99");
+    if (p50Elem) p50Elem.innerText = `${percentiles.p50_ms || 0}ms`;
+    if (p90Elem) p90Elem.innerText = `${percentiles.p90_ms || 0}ms`;
+    if (p95Elem) p95Elem.innerText = `${percentiles.p95_ms || 0}ms`;
+    if (p99Elem) p99Elem.innerText = `${percentiles.p99_ms || 0}ms`;
+  }
+
+  const container = document.getElementById("latency-histogram-bars");
+  if (!container) return;
+  if (!histogram || histogram.length === 0) {
+    container.innerHTML = `<div style="color: var(--ink-subtle); font-size: 11px; text-align: center;">Sem dados de latência</div>`;
+    return;
+  }
+
+  container.innerHTML = histogram.map(h => `
+    <div class="histogram-row">
+      <div class="histogram-label">${escapeHtml(h.bucket)}</div>
+      <div class="histogram-bar-track">
+        <div class="histogram-bar-fill" style="width: ${h.percentage}%;"></div>
+      </div>
+      <div class="histogram-val">${h.count} (${h.percentage}%)</div>
+    </div>
+  `).join("");
+}
+
+function renderThroughputCanvas(series) {
+  const canvas = document.getElementById("throughput-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || canvas.parentElement.clientWidth || 400;
+  const height = 180;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!series || series.length === 0) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Sem execuções no período", width / 2, height / 2);
+    return;
+  }
+
+  const paddingLeft = 30;
+  const paddingRight = 10;
+  const paddingTop = 15;
+  const paddingBottom = 25;
+
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+
+  let maxVal = 1;
+  series.forEach(pt => {
+    if (pt.total > maxVal) maxVal = pt.total;
+  });
+  maxVal = Math.max(4, Math.ceil(maxVal * 1.25));
+
+  // Draw grid lines
+  const gridSteps = 3;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+  ctx.font = "10px monospace";
+  ctx.textAlign = "right";
+
+  for (let i = 0; i <= gridSteps; i++) {
+    const y = paddingTop + (chartHeight / gridSteps) * (gridSteps - i);
+    const val = Math.round((maxVal / gridSteps) * i);
+
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - paddingRight, y);
+    ctx.stroke();
+
+    ctx.fillText(`${val}`, paddingLeft - 6, y + 3);
+  }
+
+  const n = series.length;
+  const getX = (idx) => paddingLeft + (chartWidth / Math.max(1, n - 1)) * idx;
+  const getY = (val) => paddingTop + chartHeight - (val / maxVal) * chartHeight;
+
+  // 1. Draw Completed Area & Line (#5e6ad2)
+  ctx.beginPath();
+  ctx.moveTo(getX(0), getY(0));
+  series.forEach((pt, idx) => {
+    ctx.lineTo(getX(idx), getY(pt.completed));
+  });
+  ctx.lineTo(getX(n - 1), getY(0));
+  ctx.closePath();
+  const gradCompleted = ctx.createLinearGradient(0, paddingTop, 0, paddingTop + chartHeight);
+  gradCompleted.addColorStop(0, "rgba(94, 106, 210, 0.25)");
+  gradCompleted.addColorStop(1, "rgba(94, 106, 210, 0.0)");
+  ctx.fillStyle = gradCompleted;
+  ctx.fill();
+
+  ctx.beginPath();
+  series.forEach((pt, idx) => {
+    const x = getX(idx);
+    const y = getY(pt.completed);
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = "#5e6ad2";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 2. Draw Failed Area & Line (#ef4444)
+  const hasFailed = series.some(pt => pt.failed > 0);
+  if (hasFailed) {
+    ctx.beginPath();
+    ctx.moveTo(getX(0), getY(0));
+    series.forEach((pt, idx) => {
+      ctx.lineTo(getX(idx), getY(pt.failed));
+    });
+    ctx.lineTo(getX(n - 1), getY(0));
+    ctx.closePath();
+    ctx.fillStyle = "rgba(239, 68, 68, 0.2)";
+    ctx.fill();
+
+    ctx.beginPath();
+    series.forEach((pt, idx) => {
+      const x = getX(idx);
+      const y = getY(pt.failed);
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // 3. Draw Time Labels on X-axis
+  const labelStep = Math.max(1, Math.floor(n / 6));
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.textAlign = "center";
+  series.forEach((pt, idx) => {
+    if (idx % labelStep === 0 || idx === n - 1) {
+      const x = getX(idx);
+      ctx.fillText(pt.time_label, x, height - 6);
+    }
+  });
+}
+
+window.addEventListener("resize", () => {
+  if (currentTab === "history" && cachedTimeseriesData) {
+    renderThroughputCanvas(cachedTimeseriesData.throughput_series);
+  }
+});
+
 async function fetchHistory() {
   try {
     const status = document.getElementById("history-filter-status")?.value || "";
@@ -1074,7 +1307,7 @@ async function fetchHistory() {
 
     if (!tbody) return;
     if (jobs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução encontrada para os filtros selecionados.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução encontrada para os filtros selecionados.</td></tr>`;
       return;
     }
 
@@ -1098,12 +1331,34 @@ async function fetchHistory() {
       }
       const timeStr = j.completed_at ? timeAgo(j.completed_at) : (j.started_at ? `Iniciado ${timeAgo(j.started_at)}` : timeAgo(j.created_at));
 
+      // Build Progress Bar Cell
+      let progressHtml = "--";
+      const pct = j.progress !== undefined && j.progress !== null ? Number(j.progress) : (j.status === "completed" ? 100 : 0);
+      const msg = j.progress_message || "";
+      const barStatusClass = j.status === "active" ? "active" : (j.status === "failed" ? "failed" : (j.status === "completed" ? "completed" : ""));
+
+      if (j.status === "active" || j.status === "retrying" || j.status === "completed" || j.progress > 0) {
+        progressHtml = `
+          <div class="progress-cell">
+            <div class="progress-text">
+              <span>${pct.toFixed(0)}%</span>
+              <span style="font-size: 10px; color: var(--ink-subtle);">${escapeHtml(j.status)}</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill ${barStatusClass}" style="width: ${pct}%;"></div>
+            </div>
+            ${msg ? `<div class="progress-msg" title="${escapeHtml(msg)}">${escapeHtml(msg)}</div>` : ''}
+          </div>
+        `;
+      }
+
       return `
         <tr>
           <td><span class="badge ${badgeClass}">${j.status.toUpperCase()}</span></td>
           <td><code style="cursor: pointer; text-decoration: underline;" onclick="openJobTraceModal('${j.id}')">${j.id.substring(0, 8)}</code></td>
           <td><strong>${escapeHtml(j.task_name)}</strong></td>
           <td><code>${escapeHtml(j.queue)}</code></td>
+          <td>${progressHtml}</td>
           <td>${durationHtml}</td>
           <td>${escapeHtml(j.worker_id || "--")}</td>
           <td>${timeStr}</td>
@@ -1122,12 +1377,32 @@ async function fetchHistory() {
 
 async function openJobTraceModal(jobId) {
   try {
+    window._activeTraceJobId = jobId;
     const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
     if (!res.ok) throw new Error("Job não encontrado");
     const job = await res.json();
 
     document.getElementById("lgtm-modal-title").innerText = `Job ${job.id.substring(0, 8)}: ${job.task_name}`;
     document.getElementById("lgtm-modal-subtitle").innerText = `Fila: [${job.queue}] | Status: ${job.status.toUpperCase()} | Worker: ${job.worker_id || 'Nenhum'}`;
+
+    // 0. Render Live Progress Widget in Modal Header
+    const progressContainer = document.getElementById("lgtm-progress-container");
+    if (progressContainer) {
+      const pct = job.progress !== undefined && job.progress !== null ? Number(job.progress) : (job.status === "completed" ? 100 : 0);
+      const barClass = job.status === "active" ? "active" : (job.status === "failed" ? "failed" : (job.status === "completed" ? "completed" : ""));
+      progressContainer.innerHTML = `
+        <div style="margin-bottom: 16px; padding: 12px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);">
+          <div class="progress-text">
+            <span style="font-weight: 500;" id="trace-progress-title">Progresso da Execução</span>
+            <span id="trace-progress-pct" style="font-family: var(--font-mono); font-weight: 600;">${pct.toFixed(0)}%</span>
+          </div>
+          <div class="progress-bar-container" style="height: 6px; margin-top: 6px;">
+            <div class="progress-bar-fill ${barClass}" id="trace-progress-bar" style="width: ${pct}%;"></div>
+          </div>
+          <div class="progress-msg" id="trace-progress-msg" style="margin-top: 4px; font-size: 11px; max-width: 100%;">${escapeHtml(job.progress_message || (job.status === 'completed' ? 'Concluído com sucesso' : (job.status === 'active' ? 'Executando...' : '')))}</div>
+        </div>
+      `;
+    }
 
     // 1. Render Tempo Trace Timeline
     const timelineContainer = document.getElementById("lgtm-trace-timeline");

@@ -339,6 +339,61 @@
           </div>
         </div>
 
+        <!-- Real-Time Time-Series Charts & Latency Histograms -->
+        <div class="obs-charts-grid">
+          <!-- Left: Throughput Area Chart -->
+          <div class="chart-card">
+            <div class="chart-header">
+              <div class="chart-title">
+                <span>📈 Vazão de Execuções (Throughput)</span>
+              </div>
+              <div class="time-window-pills">
+                <button class="time-window-pill" data-window="15" onclick="setTimeWindow(15)">15m</button>
+                <button class="time-window-pill active" data-window="30" onclick="setTimeWindow(30)">30m</button>
+                <button class="time-window-pill" data-window="60" onclick="setTimeWindow(60)">1h</button>
+                <button class="time-window-pill" data-window="1440" onclick="setTimeWindow(1440)">24h</button>
+              </div>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="throughput-canvas"></canvas>
+            </div>
+            <div class="chart-legend">
+              <div class="legend-item"><span class="legend-dot" style="background: var(--primary);"></span> Concluídos</div>
+              <div class="legend-item"><span class="legend-dot" style="background: var(--semantic-error);"></span> Falhas / DLQ</div>
+            </div>
+          </div>
+
+          <!-- Right: Latency Percentiles & Distribution Histogram -->
+          <div class="chart-card">
+            <div class="chart-header">
+              <div class="chart-title">
+                <span>⏱️ Distribuição de Latência</span>
+              </div>
+            </div>
+            <div class="percentiles-strip">
+              <div>
+                <div class="percentile-item-label">P50</div>
+                <div class="percentile-item-val" id="hist-p50">0ms</div>
+              </div>
+              <div>
+                <div class="percentile-item-label">P90</div>
+                <div class="percentile-item-val" id="hist-p90">0ms</div>
+              </div>
+              <div>
+                <div class="percentile-item-label">P95</div>
+                <div class="percentile-item-val" id="hist-p95">0ms</div>
+              </div>
+              <div>
+                <div class="percentile-item-label">P99</div>
+                <div class="percentile-item-val" id="hist-p99">0ms</div>
+              </div>
+            </div>
+            <div class="latency-histogram-list" id="latency-histogram-bars">
+              <div style="color: var(--ink-subtle); font-size: 11px; text-align: center;">Carregando histograma...</div>
+            </div>
+          </div>
+        </div>
+
         <!-- History Filter & Table -->
         <div class="card">
           <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
@@ -366,6 +421,7 @@
                   <th>Job ID</th>
                   <th>Tarefa</th>
                   <th>Fila</th>
+                  <th>Progresso</th>
                   <th>Duração</th>
                   <th>Worker</th>
                   <th>Iniciado / Concluído</th>
@@ -373,7 +429,7 @@
                 </tr>
               </thead>
               <tbody id="history-table">
-                <tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução recente gravada.</td></tr>
+                <tr><td colspan="9" style="text-align: center; color: var(--ink-subtle);">Nenhuma execução recente gravada.</td></tr>
               </tbody>
             </table>
           </div>
@@ -506,6 +562,9 @@
           <button class="modal-close" onclick="closeModal('modal-lgtm-trace')">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- Real-Time Progress Bar Widget -->
+          <div id="lgtm-progress-container"></div>
+
           <!-- Tempo-style Trace Timeline -->
           <div style="margin-bottom: 20px;">
             <div style="font-size: 11px; text-transform: uppercase; color: var(--ink-subtle); letter-spacing: 0.05em; margin-bottom: 8px;">

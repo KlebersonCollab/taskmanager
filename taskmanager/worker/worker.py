@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import traceback
 import uuid
@@ -150,12 +151,26 @@ class Worker:
                     f"Task '{job.task_name}' is not registered in Worker task registry."
                 )
 
+            # Prepare kwargs and inject TaskContext if expected
+            call_kwargs = dict(job.kwargs)
+            try:
+                sig = inspect.signature(task_def.func)
+                for param_name, param in sig.parameters.items():
+                    if param_name in call_kwargs:
+                        continue
+                    ann_str = str(param.annotation).lower() if param.annotation is not inspect.Parameter.empty else ""
+                    if param_name in ("ctx", "context") or "taskcontext" in ann_str:
+                        from taskmanager.core.task import TaskContext
+                        call_kwargs[param_name] = TaskContext(job=job, broker=self.broker)
+            except Exception:
+                pass
+
             # Execute with timeout if specified
             timeout = job.timeout or task_def.timeout
             if timeout and timeout > 0:
-                result = await asyncio.wait_for(task_def(*job.args, **job.kwargs), timeout=timeout)
+                result = await asyncio.wait_for(task_def(*job.args, **call_kwargs), timeout=timeout)
             else:
-                result = await task_def(*job.args, **job.kwargs)
+                result = await task_def(*job.args, **call_kwargs)
 
             await self.broker.mark_completed(job, result=result)
             self.info.completed_jobs_count += 1

@@ -11,6 +11,34 @@ from taskmanager.core.broker import RedisBroker
 from taskmanager.core.job import Job
 
 
+class TaskContext:
+    """Execution context injected into running background tasks to report progress and logs."""
+
+    def __init__(self, job: Job, broker: RedisBroker):
+        self.job = job
+        self.broker = broker
+
+    @property
+    def job_id(self) -> str:
+        return self.job.id
+
+    @property
+    def task_name(self) -> str:
+        return self.job.task_name
+
+    @property
+    def queue(self) -> str:
+        return self.job.queue
+
+    async def update_progress(self, percent: float, message: str | None = None) -> None:
+        """Updates real-time progress (0-100%) and current execution step message."""
+        await self.broker.update_job_progress(self.job.id, progress=percent, message=message)
+
+    async def append_log(self, message: str) -> None:
+        """Appends a log line to this job's live execution log stream."""
+        await self.broker.append_job_log(self.job.id, line=message)
+
+
 class TaskRegistry:
     """Registry holding all user-defined background task functions."""
 
@@ -93,9 +121,14 @@ class Task:
             params = []
             sample_kwargs: dict[str, Any] = {}
             for param in sig.parameters.values():
+                ann_str = "Any" if param.annotation is inspect.Parameter.empty else str(param.annotation)
+
+                # Skip auto-injected TaskContext from sample payload / user prompts
+                if param.name in ("ctx", "context") or "taskcontext" in ann_str.lower():
+                    continue
+
                 has_default = param.default is not inspect.Parameter.empty
                 default_val = param.default if has_default else None
-                ann_str = "Any" if param.annotation is inspect.Parameter.empty else str(param.annotation)
 
                 params.append(
                     {
