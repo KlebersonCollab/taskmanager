@@ -1254,6 +1254,43 @@ tr:hover .btn-action {
   flex-shrink: 0;
 }
 
+/* Alert Channels UI */
+.alert-channel-card {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.15s ease;
+}
+
+.alert-channel-card:hover {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+}
+
+.channel-platform-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.channel-platform-badge.slack { background: rgba(224, 30, 90, 0.15); color: #e01e5a; border: 1px solid rgba(224, 30, 90, 0.3); }
+.channel-platform-badge.discord { background: rgba(88, 101, 242, 0.15); color: #8590ff; border: 1px solid rgba(88, 101, 242, 0.3); }
+.channel-platform-badge.teams { background: rgba(98, 100, 167, 0.15); color: #9aa1f5; border: 1px solid rgba(98, 100, 167, 0.3); }
+.channel-platform-badge.telegram { background: rgba(36, 161, 222, 0.15); color: #38bdf8; border: 1px solid rgba(36, 161, 222, 0.3); }
+.channel-platform-badge.webhook { background: rgba(94, 106, 210, 0.15); color: #818cf8; border: 1px solid rgba(94, 106, 210, 0.3); }
+
+
 
 
 

@@ -388,4 +388,63 @@ async def test_api_timeseries_metrics_endpoint(app_setup):
         assert res_max.json()["window_minutes"] == 1440
 
 
+@pytest.mark.asyncio
+async def test_api_alert_channels_crud_and_test_dispatch(app_setup):
+    app, broker, _ = app_setup
+    from unittest.mock import AsyncMock, patch
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Create alert channel
+        payload = {
+            "name": "Ops Slack Alerts",
+            "channel_type": "slack",
+            "target_url": "https://hooks.slack.com/services/test/xxx/yyy",
+            "events": ["job:failed"],
+            "enabled": True,
+        }
+        res = await client.post("/api/alerts/channels", json=payload)
+        assert res.status_code == 200
+        created = res.json()
+        ch_id = created["id"]
+        assert created["name"] == "Ops Slack Alerts"
+        assert created["channel_type"] == "slack"
+
+        # 2. List alert channels
+        res_list = await client.get("/api/alerts/channels")
+        assert res_list.status_code == 200
+        channels = res_list.json()
+        assert len(channels) == 1
+        assert channels[0]["id"] == ch_id
+
+        # 3. Get channel by ID
+        res_get = await client.get(f"/api/alerts/channels/{ch_id}")
+        assert res_get.status_code == 200
+        assert res_get.json()["id"] == ch_id
+
+        # 4. Update channel
+        payload["name"] = "Updated Slack Alerts"
+        res_put = await client.put(f"/api/alerts/channels/{ch_id}", json=payload)
+        assert res_put.status_code == 200
+        assert res_put.json()["name"] == "Updated Slack Alerts"
+
+        # 5. Test ping dispatch
+        with patch.object(broker.alert_dispatcher, "send_alert", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = {"success": True, "status_code": 200}
+            res_test = await client.post(f"/api/alerts/channels/{ch_id}/test")
+            assert res_test.status_code == 200
+            assert res_test.json()["success"] is True
+            mock_send.assert_called_once()
+
+        # 6. Delete channel
+        res_del = await client.delete(f"/api/alerts/channels/{ch_id}")
+        assert res_del.status_code == 200
+        assert res_del.json()["status"] == "deleted"
+
+        # 7. Verify 404 after deletion
+        res_404 = await client.get(f"/api/alerts/channels/{ch_id}")
+        assert res_404.status_code == 404
+
+
+
 

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from taskmanager.alerts.channel import AlertChannel
 from taskmanager.api.events import WebSocketEventManager
 from taskmanager.config import settings
 from taskmanager.core.broker import RedisBroker
@@ -464,6 +465,53 @@ def create_app(
                 status_code=400,
                 detail="Invalid target. Must be 'queues', 'history', or 'all'.",
             )
+
+    # --- Multi-Platform Alert Channels ---
+    @app.get("/api/alerts/channels")
+    async def list_alert_channels_endpoint():
+        return await broker.list_alert_channels()
+
+    @app.post("/api/alerts/channels")
+    async def create_alert_channel_endpoint(channel: AlertChannel):
+        await broker.save_alert_channel(channel)
+        return channel
+
+    @app.get("/api/alerts/channels/{channel_id}")
+    async def get_alert_channel_endpoint(channel_id: str):
+        channel = await broker.get_alert_channel(channel_id)
+        if not channel:
+            raise HTTPException(status_code=404, detail="Alert channel not found")
+        return channel
+
+    @app.put("/api/alerts/channels/{channel_id}")
+    async def update_alert_channel_endpoint(channel_id: str, channel: AlertChannel):
+        channel.id = channel_id
+        await broker.save_alert_channel(channel)
+        return channel
+
+    @app.delete("/api/alerts/channels/{channel_id}")
+    async def delete_alert_channel_endpoint(channel_id: str):
+        deleted = await broker.delete_alert_channel(channel_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Alert channel not found")
+        return {"status": "deleted", "id": channel_id}
+
+    @app.post("/api/alerts/channels/{channel_id}/test")
+    async def test_alert_channel_endpoint(channel_id: str):
+        channel = await broker.get_alert_channel(channel_id)
+        if not channel:
+            raise HTTPException(status_code=404, detail="Alert channel not found")
+        test_data = {
+            "job_id": "test-ping-000",
+            "task_name": "system.ping",
+            "queue": "default",
+            "error": "Test alert ping triggered from TaskManager dashboard",
+            "retry_count": 0,
+            "max_retries": 0,
+            "worker_id": "dashboard-user",
+        }
+        result = await broker.alert_dispatcher.send_alert(channel, "job:failed", test_data)
+        return result
 
     # --- WebSocket Real-Time Stream ---
     @app.websocket("/ws/events")

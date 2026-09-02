@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -8,6 +9,8 @@ from typing import Any
 
 import redis.asyncio as redis
 
+from taskmanager.alerts.channel import AlertChannel
+from taskmanager.alerts.dispatcher import AlertDispatcher
 from taskmanager.core.job import Job, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -19,6 +22,7 @@ class RedisBroker:
     def __init__(self, redis_client: redis.Redis, prefix: str = "tm"):
         self.redis = redis_client
         self.prefix = prefix
+        self.alert_dispatcher = AlertDispatcher()
 
     # --- Key Helper Functions ---
     def _key_queue(self, queue: str) -> str:
@@ -251,7 +255,7 @@ class RedisBroker:
             },
         )
 
-    async def mark_failed(self, job: Job, error: str, traceback_str: str) -> None:
+    async def mark_failed(self, job: Job, error: str, traceback_str: str | None = None) -> None:
         """Handles job failure: retries with exponential backoff or routes to DLQ."""
         latest = await self.get_job(job.id)
         if latest:
@@ -298,6 +302,18 @@ class RedisBroker:
 
             await self.publish_event(
                 "job:failed", {"job_id": job.id, "queue": job.queue, "error": error, "dlq": True}
+            )
+            await self.dispatch_alert(
+                "job:failed",
+                {
+                    "job_id": job.id,
+                    "task_name": job.task_name,
+                    "queue": job.queue,
+                    "error": error,
+                    "retry_count": job.retry_count,
+                    "max_retries": job.max_retries,
+                    "worker_id": job.worker_id,
+                },
             )
 
     async def cancel_job(self, job_id: str) -> bool:
@@ -768,4 +784,40 @@ class RedisBroker:
         finally:
             await pubsub.unsubscribe(self._key_control())
             await pubsub.aclose()
+
+    # --- Multi-Platform Alert Channels ---
+    def _key_alerts(self) -> str:
+        return f"{self.prefix}:alerts:channels"
+
+    async def save_alert_channel(self, channel: AlertChannel) -> None:
+        """Saves an alert channel configuration in Redis."""
+        await self.redis.hset(self._key_alerts(), channel.id, channel.model_dump_json())
+
+    async def get_alert_channel(self, channel_id: str) -> AlertChannel | None:
+        """Retrieves an alert channel by ID."""
+        raw = await self.redis.hget(self._key_alerts(), channel_id)
+        if not raw:
+            return None
+        return AlertChannel.model_validate_json(raw)
+
+    async def list_alert_channels(self) -> list[AlertChannel]:
+        """Lists all configured alert channels."""
+        all_raw = await self.redis.hgetall(self._key_alerts())
+        return [AlertChannel.model_validate_json(v) for v in all_raw.values()]
+
+    async def delete_alert_channel(self, channel_id: str) -> bool:
+        """Deletes an alert channel by ID."""
+        deleted = await self.redis.hdel(self._key_alerts(), channel_id)
+        return deleted > 0
+
+    async def dispatch_alert(self, event_type: str, event_data: dict[str, Any]) -> None:
+        """Dispatches an alert event to all matching enabled channels asynchronously."""
+        try:
+            channels = await self.list_alert_channels()
+            for ch in channels:
+                if ch.matches_event(event_type):
+                    asyncio.create_task(self.alert_dispatcher.send_alert(ch, event_type, event_data))
+        except Exception as err:
+            logger.warning(f"Failed to process alert dispatch: {err}")
+
 

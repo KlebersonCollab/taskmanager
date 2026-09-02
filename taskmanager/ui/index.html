@@ -52,6 +52,13 @@
           <span id="wsText">Conectando...</span>
         </div>
 
+        <button class="btn-icon" onclick="openAlertsModal()" title="Canais de Alerta (Slack/Discord/Teams/Telegram/Webhook)">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </button>
+
         <button class="btn-icon" onclick="openMaintenanceModal()" title="Limpeza & Manutenção do Redis">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -84,6 +91,13 @@
               <div>
                 <div class="dropdown-title">Nova Fila</div>
                 <div class="dropdown-desc">Registrar uma nova fila no Redis</div>
+              </div>
+            </button>
+            <button class="dropdown-item" onclick="openAlertsModal(); closeDropdowns();">
+              <span class="dropdown-icon">🔔</span>
+              <div>
+                <div class="dropdown-title">Canais de Alerta (Webhooks)</div>
+                <div class="dropdown-desc">Slack, Discord, MS Teams, Telegram</div>
               </div>
             </button>
             <div class="dropdown-divider"></div>
@@ -713,6 +727,81 @@
               <button type="submit" class="btn btn-primary">Criar Fila</button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Alert Channels (Webhooks) -->
+    <div class="modal-backdrop" id="modal-alerts">
+      <div class="modal" style="max-width: 680px;">
+        <div class="modal-header">
+          <div>
+            <h3>🔔 Canais de Alerta (Webhooks)</h3>
+            <div style="font-size: 12px; color: var(--ink-tertiary);">Slack, Discord, MS Teams, Telegram e Webhooks para DLQ & Falhas</div>
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-alerts')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <span style="font-size: 12px; color: var(--ink-subtle);">Canais configurados para envio automático:</span>
+            <button class="btn btn-primary btn-sm" id="btn-toggle-alert-form" onclick="toggleAlertChannelForm()">+ Adicionar Canal</button>
+          </div>
+
+          <!-- Add / Edit Channel Form -->
+          <div id="alert-channel-form-box" style="display: none; background: var(--surface-2); border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px;">
+            <form id="form-alert-channel" onsubmit="handleAlertChannelSubmit(event)">
+              <input type="hidden" id="alert-channel-id" value="" />
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">Nome do Canal</label>
+                  <input type="text" class="form-input" id="alert-channel-name" placeholder="ex: Slack #ops-alerts" required />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">Plataforma</label>
+                  <select class="form-select" id="alert-channel-type" onchange="handlePlatformTypeChange(this.value)" required>
+                    <option value="slack">Slack</option>
+                    <option value="discord">Discord</option>
+                    <option value="teams">Microsoft Teams</option>
+                    <option value="telegram">Telegram</option>
+                    <option value="webhook">Webhook Genérico (HTTP POST)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" id="alert-target-label">URL do Webhook</label>
+                <input type="url" class="form-input" id="alert-channel-url" placeholder="https://hooks.slack.com/services/..." required />
+              </div>
+
+              <!-- Telegram Specific Field -->
+              <div class="form-group" id="group-telegram-chat-id" style="display: none;">
+                <label class="form-label">Telegram Chat ID</label>
+                <input type="text" class="form-input" id="alert-telegram-chat-id" placeholder="ex: -1001234567890 ou @seu_canal" />
+                <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 4px;">
+                  Na URL acima, informe: <code>https://api.telegram.org/bot&lt;BOT_TOKEN&gt;/sendMessage</code>
+                </div>
+              </div>
+
+              <!-- Webhook Secret Field -->
+              <div class="form-group" id="group-webhook-secret" style="display: none;">
+                <label class="form-label">Secret Token / Authorization Key (Opcional)</label>
+                <input type="text" class="form-input" id="alert-webhook-secret" placeholder="Bearer token ou segredo HMAC" />
+              </div>
+
+              <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAlertChannelForm(false)">Cancelar</button>
+                <button type="submit" class="btn btn-primary btn-sm">Salvar Canal</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Configured Channels List -->
+          <div id="alerts-channels-list" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-alerts')">Fechar</button>
         </div>
       </div>
     </div>

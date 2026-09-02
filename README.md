@@ -9,8 +9,8 @@
 ![UI](https://img.shields.io/badge/UI-Linear_Dark_System-5E6AD2?style=for-the-badge&logo=linear&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
-**Engine moderna de execução e gerenciamento de background tasks em Python inspirada no Celery e BullMQ.**  
-*Agendador Cron Dinâmico • Observabilidade LGTM Completa • Dead Letter Queue Multi-Fila • Telemetria com Backpressure • Dashboard SPA Linear Dark.*
+**Engine moderna de background tasks em Python inspirada no Celery e BullMQ.**  
+*Progresso em Tempo Real • Live Log Streaming • Observabilidade Canvas Nativa • Webhooks Multi-Plataforma • Agendador Cron Dinâmico • Dead Letter Queue Multi-Fila • Dashboard SPA Linear Dark.*
 
 <br/>
 
@@ -22,16 +22,20 @@
 
 ## 🌟 Principais Destaques
 
-- **🚀 Asyncio & Sync Worker Runtime**: Suporte nativo e transparente para corrotinas assíncronas (`async def`) e funções síncronas (`def`), com concorrência ajustável e timeouts granulares.
-- **📦 Redis Broker com Durabilidade AOF**: Sem brokers pesados. Utiliza listas atômicas do Redis (`LPOP`/`BLPOP`), conjuntos ordenados para jobs agendados e histórico, e persistência AOF para garantia de *Zero Data Loss*.
+- **🚀 Asyncio & Sync Worker Runtime**: Suporte nativo para corrotinas assíncronas (`async def`) e funções síncronas (`def`), com concorrência ajustável, circuit breaker de CPU/RAM e timeouts granulares.
+- **📈 Progresso em Tempo Real & Live Log Streaming**: Injeção automática de `TaskContext` nas tarefas para emissão de progresso (`0-100%`) e streaming de logs linha a linha em tempo real via WebSockets.
+- **📊 Observabilidade Nativa Self-Contained (Zero Prometheus / Zero Grafana)**:
+  - **📈 Gráficos Temporais Canvas**: Curvas de área de throughput (sucesso vs falhas) com escala de alta densidade DPI nas janelas de `15m`, `30m`, `1h` e `24h`.
+  - **⏱️ Histograma & Percentis de Latência**: Cálculo exato de **P50**, **P90**, **P95** e **P99** e distribuição em faixas de tempo (`<50ms`, `50-200ms`, `200-500ms`, etc.).
+  - **📋 Ranking por Tarefa**: Volume, taxa de sucesso % e latência média por task.
+- **🔔 Canais de Alerta Multi-Plataforma (Webhooks)**:
+  - Notificações automáticas instantâneas ao esgotar retentativas (DLQ) para **Slack**, **Discord**, **Microsoft Teams**, **Telegram** e **Webhooks HTTP Genéricos** com assinatura secreta.
+  - Botão de envio de alerta de teste (*Test Ping*) direto pelo dashboard.
+- **📦 Redis Broker com Durabilidade AOF**: Filas atômicas (`LPOP`/`BLPOP`), conjuntos ordenados para jobs agendados e histórico, e persistência AOF com garantia de *Zero Data Loss*.
 - **🧠 Fallback In-Memory Automático**: Modo de desenvolvimento zero-dependência (`fakeredis`) quando o Redis local não estiver em execução.
-- **✨ Decorator `@task` & Introspecção**: Enfileiramento via `.delay(*args, **kwargs)` ou `.apply_async(...)` com geração automática de schemas e payload no painel.
-- **⏰ Agendador Cron & Intervalos em Tempo Real**: Sintaxe padrão de 5 posições (`*/5 * * * *`) ou intervalo em segundos com distributed leader locking e execução garantida.
-- **🛡️ Resiliência, DLQ & Backpressure**: Retentativas com exponential backoff, Dead Letter Queue (DLQ) com inspeção de stacktrace e *One-Click Replay*. Circuit breaker de CPU e Memória RSS por worker.
-- **📊 Observabilidade LGTM Nativa**:
-  - **📈 Mimir / Prometheus**: KPIs em tempo real (Taxa de Sucesso %, Duração Média ms, Latência P95 ms, Throughput/min).
-  - **📜 Loki**: Console de logs de execução, erros e tracebacks capturados.
-  - **⏱️ Tempo**: Linha do tempo em cascata (Enqueued ➔ Dequeued ➔ Executing ➔ Finished/Failed).
+- **✨ Decorator `@task` & Introspecção**: Enfileiramento via `.delay(*args, **kwargs)` ou `.apply_async(...)` com geração automática de schemas e assinatura de parâmetros.
+- **⏰ Agendador Cron & Intervalos em Tempo Real**: Sintaxe padrão de 5 posições (`*/5 * * * *`) ou intervalo em segundos com distributed leader locking.
+- **🛡️ Resiliência & Dead Letter Queue (DLQ)**: Retentativas com exponential backoff, Dead Letter Queue (DLQ) com inspeção de stacktrace e *One-Click Replay*.
 - **🎨 Design System Linear Dark**: Interface minimalista com atalho global **`Ctrl+K` (Command Palette)**, menu de ação unificado **`+ Criar ▾`**, e realce suave de linhas.
 - **🔌 Plug-and-Play em Qualquer Framework**: Use como aplicação independente ou embarque facilmente dentro do seu projeto **FastAPI**, **Django** ou **Flask**.
 
@@ -39,7 +43,7 @@
 
 ## 📦 Como Usar o TaskManager no seu Projeto (Biblioteca / Framework)
 
-Você pode adicionar o TaskManager ao seu projeto Python existente de 3 maneiras:
+Você pode adicionar o TaskManager ao seu projeto Python existente via PyPI:
 
 ```bash
 # Instalar no seu projeto via PyPI:
@@ -57,12 +61,13 @@ uv add "taskmanager-engine>=0.1.2" --refresh
 
 ### Método 1: Embutir no FastAPI / Starlette (Sub-Aplicação / Mount)
 
-Monte o dashboard e os endpoints do TaskManager diretamente dentro da sua aplicação FastAPI existente:
+Monte o dashboard, os websockets e os endpoints do TaskManager diretamente dentro da sua aplicação FastAPI existente:
 
 ```python
 # main.py
+import asyncio
 from fastapi import FastAPI
-from taskmanager import TaskManager, task
+from taskmanager import TaskManager, task, TaskContext
 
 # 1. Cria sua aplicação principal
 app = FastAPI(title="Minha API Principal")
@@ -70,20 +75,27 @@ app = FastAPI(title="Minha API Principal")
 # 2. Configura a instância do TaskManager apontando para o Redis
 tm = TaskManager(redis_url="redis://localhost:6379/0", prefix="meu_app")
 
-# 3. Define tarefas usando o decorator @task
-@task(name="emails.enviar_boas_vindas", queue="emails", max_retries=3)
-async def enviar_boas_vindas(email: str, nome: str):
-    print(f"Enviando e-mail para {nome} <{email}>...")
-    return {"status": "enviado"}
+# 3. Define tarefas usando o decorator @task com TaskContext opcional
+@task(name="relatorios.gerar_pdf", queue="relatorios", max_retries=3)
+async def gerar_relatorio_pdf(cliente_id: int, total_paginas: int, ctx: TaskContext):
+    await ctx.append_log(f"Iniciando geração de relatório para cliente {cliente_id}...")
+    
+    for pag in range(1, total_paginas + 1):
+        await asyncio.sleep(0.1)  # Simula processamento
+        pct = round((pag / total_paginas) * 100, 1)
+        await ctx.update_progress(pct, f"Renderizando página {pag} de {total_paginas}")
+        await ctx.append_log(f"Página {pag} renderizada com sucesso.")
+        
+    return {"status": "concluido", "arquivo": f"relatorio_{cliente_id}.pdf"}
 
 # 4. Monta o dashboard do TaskManager sob a rota /tasks
 tm.mount_to(app, path="/tasks")
 
-@app.post("/cadastro")
-async def cadastrar_usuario(email: str, nome: str):
+@app.post("/relatorios/solicitar")
+async def solicitar_relatorio(cliente_id: int, paginas: int = 10):
     # Enfileira o job em background
-    job = await enviar_boas_vindas.delay(email=email, nome=nome)
-    return {"mensagem": "Usuário cadastrado!", "job_id": job.id}
+    job = await gerar_relatorio_pdf.delay(cliente_id=cliente_id, total_paginas=paginas)
+    return {"mensagem": "Relatório solicitado!", "job_id": job.id}
 ```
 
 *Ao acessar `http://localhost:8000/tasks/`, o dashboard completo estará rodando dentro da sua própria aplicação!*
@@ -113,13 +125,15 @@ TASKMANAGER_REDIS_PREFIX = "django_app"
 2. Crie um arquivo `tasks.py` dentro dos seus apps Django:
 ```python
 # meu_app_vendas/tasks.py
-from taskmanager import task
+from taskmanager import task, TaskContext
 
 @task(name="vendas.gerar_fatura", queue="faturamento", max_retries=2)
-async def gerar_fatura(pedido_id: int):
-    # O taskmanager.contrib.django descobre e carrega automaticamente
-    # todos os módulos tasks.py de todos os apps em INSTALLED_APPS!
-    ...
+async def gerar_fatura(pedido_id: int, ctx: TaskContext):
+    await ctx.append_log(f"Processando fatura do pedido #{pedido_id}")
+    await ctx.update_progress(50.0, "Consultando gateway de pagamento...")
+    # ...
+    await ctx.update_progress(100.0, "Fatura emitida com sucesso!")
+    return {"fatura_id": 98765, "pedido_id": pedido_id}
 ```
 
 3. Adicione as URLs no seu `urls.py`:
@@ -160,13 +174,44 @@ taskmanager server --port 8080
 
 ---
 
+## 🔔 Configuração de Alertas & Webhooks
+
+Você pode cadastrar canais de notificação diretamente pela interface do dashboard (ícone `🔔` ou menu `+ Criar ▾`) ou via API REST:
+
+```bash
+# Exemplo: Cadastrar canal do Discord para falhas na DLQ
+curl -X POST http://localhost:8000/api/alerts/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Discord #alertas-ops",
+    "channel_type": "discord",
+    "target_url": "https://discord.com/api/webhooks/12345/abcdef",
+    "events": ["job:failed"],
+    "enabled": true
+  }'
+
+# Exemplo: Cadastrar canal do Telegram
+curl -X POST http://localhost:8000/api/alerts/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Telegram Ops Bot",
+    "channel_type": "telegram",
+    "target_url": "https://api.telegram.org/bot<SEU_BOT_TOKEN>/sendMessage",
+    "telegram_chat_id": "-1001234567890",
+    "events": ["job:failed"],
+    "enabled": true
+  }'
+```
+
+---
+
 ## 📂 Pasta de Exemplos Práticos (`samples/`)
 
 O repositório inclui projetos de exemplo completos e prontos para rodar:
 
 | Exemplo | Descrição | Como Executar |
 | :--- | :--- | :--- |
-| [📁 samples/fastapi_sample](samples/fastapi_sample) | API FastAPI completa montando o TaskManager em `/tasks/` com endpoints de checkout e e-mail. | `uv run python -m samples.fastapi_sample.main` |
+| [📁 samples/fastapi_sample](samples/fastapi_sample) | API FastAPI completa montando o TaskManager em `/tasks/` com endpoints de checkout, logs ao vivo e e-mail. | `uv run python -m samples.fastapi_sample.main` |
 | [📁 samples/django_sample](samples/django_sample) | Projeto Django configurado com `taskmanager.contrib.django`, `tasks.py` e comandos `manage.py`. | `python samples/django_sample/manage.py run_worker` |
 | [📁 samples/standalone_cli](samples/standalone_cli) | Demonstração de uso puro via linha de comando desacoplada. | `uv run taskmanager dev --modules samples.standalone_cli.tasks` |
 
@@ -183,20 +228,17 @@ uv sync --all-extras
 
 # 2. Compilar os artefatos de distribuição
 uv build
-# (ou via python -m build)
 
 # 3. Testar instalação local em modo editável
 pip install -e .
 
 # 4. Publicar no PyPI
 uv publish --token <SEU_TOKEN_PYPI>
-# (ou twine upload dist/*)
 
 # 5. Em projetos externos, ignorar o cache do UV para baixar a nova versão imediatamente:
 uv sync --refresh
 # ou
 uv add "taskmanager-engine>=0.1.2" --refresh
-# (ou limpar todo o cache local: uv cache clean)
 ```
 
 ---
@@ -236,7 +278,7 @@ Monitore jobs que esgotaram retentativas, visualize o stacktrace completo e faç
 
 ---
 
-### 6. Observabilidade & Trace Waterfall (LGTM Stack)
+### 6. Observabilidade Nativa & Trace Waterfall (LGTM Stack)
 Inspecione a linha do tempo exata de execução de cada tarefa com logs capturados e payloads serializados.
 <img src="docs/images/06_observability_trace.png" alt="Observabilidade e Tracing" width="100%" style="border-radius: 8px; border: 1px solid #23252a; margin-bottom: 24px;" />
 
@@ -262,7 +304,7 @@ docker compose up -d --scale worker-emails=3
 ## 🧪 Testes & Qualidade
 
 ```bash
-# Executar suíte completa de testes
+# Executar suíte completa de testes (37 testes unitários e de integração)
 uv run pytest -v tests/
 
 # Executar linter de código

@@ -1604,6 +1604,7 @@ const defaultCommands = [
   { id: "new-cron", icon: "⏰", title: "Novo Cron / Agendamento", desc: "Programar rotina periódica ou intervalo", action: () => openScheduleModal() },
   { id: "new-queue", icon: "📦", title: "Nova Fila", desc: "Registrar uma nova fila no Redis", action: () => openCreateQueueModal() },
   { id: "new-worker", icon: "🤖", title: "Iniciar Novo Worker", desc: "Spawnar processo de worker dinâmico", action: () => openSpawnWorkerModal() },
+  { id: "alerts-config", icon: "🔔", title: "Configurar Canais de Alerta (Webhooks)", desc: "Slack, Discord, MS Teams, Telegram, Webhook", action: () => openAlertsModal() },
   { id: "tab-overview", icon: "📊", title: "Ir para: Visão Geral", desc: "Métricas globais de filas e telemetria", action: () => switchTab("overview") },
   { id: "tab-workers", icon: "👥", title: "Ir para: Workers", desc: "Gerenciar workers ativos, pausar e retomar", action: () => switchTab("workers") },
   { id: "tab-queues", icon: "📋", title: "Ir para: Filas & Tarefas", desc: "Explorar funções @task registradas", action: () => switchTab("queues") },
@@ -1724,4 +1725,189 @@ document.addEventListener("keydown", (e) => {
     closeDropdowns();
   }
 });
+
+// --- Alert Channels Controller ---
+
+let cachedAlertChannels = [];
+
+function openAlertsModal() {
+  toggleAlertChannelForm(false);
+  fetchAlertChannels();
+  openModal("modal-alerts");
+}
+
+function toggleAlertChannelForm(show) {
+  const formBox = document.getElementById("alert-channel-form-box");
+  const btn = document.getElementById("btn-toggle-alert-form");
+  if (!formBox) return;
+
+  const isVisible = show !== undefined ? show : formBox.style.display !== "none";
+  if (isVisible && show === undefined) {
+    formBox.style.display = "none";
+    if (btn) btn.innerText = "+ Adicionar Canal";
+  } else {
+    formBox.style.display = "block";
+    if (btn) btn.innerText = "✕ Fechar Formulário";
+    if (show !== false) {
+      document.getElementById("alert-channel-id").value = "";
+      document.getElementById("alert-channel-name").value = "";
+      document.getElementById("alert-channel-type").value = "slack";
+      handlePlatformTypeChange("slack");
+    }
+  }
+}
+
+function handlePlatformTypeChange(type) {
+  const urlInput = document.getElementById("alert-channel-url");
+  const tgGroup = document.getElementById("group-telegram-chat-id");
+  const hookGroup = document.getElementById("group-webhook-secret");
+  const label = document.getElementById("alert-target-label");
+
+  if (tgGroup) tgGroup.style.display = type === "telegram" ? "block" : "none";
+  if (hookGroup) hookGroup.style.display = type === "webhook" ? "block" : "none";
+
+  if (type === "slack") {
+    if (label) label.innerText = "URL do Webhook do Slack";
+    if (urlInput) urlInput.placeholder = "https://hooks.slack.com/services/T.../B.../...";
+  } else if (type === "discord") {
+    if (label) label.innerText = "URL do Webhook do Discord";
+    if (urlInput) urlInput.placeholder = "https://discord.com/api/webhooks/...";
+  } else if (type === "teams") {
+    if (label) label.innerText = "URL do Conector / Webhook do Microsoft Teams";
+    if (urlInput) urlInput.placeholder = "https://outlook.office.com/webhook/...";
+  } else if (type === "telegram") {
+    if (label) label.innerText = "URL da API do Bot Telegram";
+    if (urlInput) urlInput.placeholder = "https://api.telegram.org/bot<TOKEN>/sendMessage";
+  } else {
+    if (label) label.innerText = "URL do Endpoint HTTP (POST)";
+    if (urlInput) urlInput.placeholder = "https://api.seusistema.com/webhooks/tasks";
+  }
+}
+
+async function fetchAlertChannels() {
+  const container = document.getElementById("alerts-channels-list");
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/alerts/channels`);
+    const channels = await res.json();
+    cachedAlertChannels = channels;
+
+    if (channels.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 24px; text-align: center; color: var(--ink-subtle); background: var(--surface-2); border-radius: var(--radius-md); border: 1px dashed var(--hairline);">
+          Nenhum canal de alerta cadastrado. Clique em <strong>+ Adicionar Canal</strong> para integrar Slack, Discord, Teams, Telegram ou Webhooks.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = channels.map(ch => {
+      const typeClass = ch.channel_type || "webhook";
+      const iconMap = {
+        slack: "💬",
+        discord: "🎮",
+        teams: "👥",
+        telegram: "✈️",
+        webhook: "🌐",
+      };
+      const icon = iconMap[ch.channel_type] || "🔔";
+      const targetPreview = ch.channel_type === "telegram" 
+        ? `Chat ID: ${ch.telegram_chat_id || '--'}` 
+        : (ch.target_url.length > 40 ? ch.target_url.substring(0, 37) + '...' : ch.target_url);
+
+      return `
+        <div class="alert-channel-card">
+          <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+            <span class="channel-platform-badge ${typeClass}">${icon} ${typeClass.toUpperCase()}</span>
+            <div style="min-width: 0;">
+              <div style="font-weight: 600; color: var(--ink); font-size: 13px;">${escapeHtml(ch.name)}</div>
+              <div style="font-size: 11px; color: var(--ink-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px;" title="${escapeHtml(ch.target_url)}">
+                ${escapeHtml(targetPreview)}
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            <button class="btn-action" onclick="testAlertChannel('${ch.id}', '${escapeHtml(ch.name)}')">🔔 Testar</button>
+            <button class="btn-action btn-action-danger" onclick="deleteAlertChannel('${ch.id}', '${escapeHtml(ch.name)}')">🗑️</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to fetch alert channels", err);
+    container.innerHTML = `<div style="color: var(--semantic-error); font-size: 12px;">Erro ao carregar canais de alerta.</div>`;
+  }
+}
+
+async function handleAlertChannelSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById("alert-channel-id").value;
+  const name = document.getElementById("alert-channel-name").value.trim();
+  const channel_type = document.getElementById("alert-channel-type").value;
+  const target_url = document.getElementById("alert-channel-url").value.trim();
+  const telegram_chat_id = document.getElementById("alert-telegram-chat-id")?.value.trim() || null;
+  const secret_token = document.getElementById("alert-webhook-secret")?.value.trim() || null;
+
+  const payload = {
+    name,
+    channel_type,
+    target_url,
+    telegram_chat_id: channel_type === "telegram" ? telegram_chat_id : null,
+    secret_token: channel_type === "webhook" ? secret_token : null,
+    events: ["job:failed"],
+    enabled: true,
+  };
+
+  try {
+    const url = id ? `${API_BASE}/api/alerts/channels/${id}` : `${API_BASE}/api/alerts/channels`;
+    const method = id ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      toast.success("Canal Salvo", `Canal de alerta '${name}' configurado com sucesso.`);
+      toggleAlertChannelForm(false);
+      fetchAlertChannels();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error("Erro ao salvar canal", err.detail || "Falha ao processar configuração.");
+    }
+  } catch (err) {
+    toast.error("Falha na requisição", err.message);
+  }
+}
+
+async function testAlertChannel(channelId, channelName) {
+  toast.info("Enviando Notificação de Teste", `Disparando alerta para ${channelName}...`);
+  try {
+    const res = await fetch(`${API_BASE}/api/alerts/channels/${channelId}/test`, { method: "POST" });
+    const result = await res.json();
+    if (result.success) {
+      toast.success("Alerta Enviado com Sucesso", `Webhook respondeu com HTTP ${result.status_code || 200}.`);
+    } else {
+      toast.error("Falha no Envio do Alerta", result.error || `HTTP ${result.status_code || 'Erro'}`);
+    }
+  } catch (err) {
+    toast.error("Erro de Rede no Teste", err.message);
+  }
+}
+
+async function deleteAlertChannel(channelId, channelName) {
+  try {
+    const res = await fetch(`${API_BASE}/api/alerts/channels/${channelId}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.info("Canal Removido", `Canal '${channelName}' foi excluído.`);
+      fetchAlertChannels();
+    } else {
+      toast.error("Erro ao excluir", "Não foi possível remover o canal.");
+    }
+  } catch (err) {
+    toast.error("Falha na requisição", err.message);
+  }
+}
+
 
