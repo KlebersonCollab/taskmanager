@@ -9,6 +9,7 @@ import redis.asyncio as redis
 from taskmanager.config import settings
 from taskmanager.core.broker import RedisBroker
 from taskmanager.core.job import Job
+from taskmanager.core.limiter import RateLimitSpec, parse_rate_limit
 
 
 class TaskContext:
@@ -71,6 +72,8 @@ class TaskRegistry:
         max_retries: int = 3,
         retry_backoff: float = 2.0,
         timeout: float | None = None,
+        rate_limit: str | None = None,
+        max_concurrency: int | None = None,
     ) -> Callable[..., Task]:
         """Decorator to register a function directly to this registry."""
         def decorator(func: Callable[..., Any]) -> Task:
@@ -81,6 +84,8 @@ class TaskRegistry:
                 max_retries=max_retries,
                 retry_backoff=retry_backoff,
                 timeout=timeout,
+                rate_limit=rate_limit,
+                max_concurrency=max_concurrency,
                 broker=self._default_broker,
             )
             self.register(t)
@@ -103,6 +108,8 @@ class Task:
         max_retries: int = 3,
         retry_backoff: float = 2.0,
         timeout: float | None = None,
+        rate_limit: str | None = None,
+        max_concurrency: int | None = None,
         broker: RedisBroker | None = None,
     ):
         self.func = func
@@ -111,6 +118,13 @@ class Task:
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
         self.timeout = timeout
+        self.rate_limit = rate_limit
+        self.rate_limit_spec: RateLimitSpec | None = (
+            parse_rate_limit(rate_limit) if rate_limit else None
+        )
+        if max_concurrency is not None and max_concurrency <= 0:
+            raise ValueError(f"max_concurrency must be greater than 0, got {max_concurrency}")
+        self.max_concurrency = max_concurrency
         self._broker = broker
         self.is_async = inspect.iscoroutinefunction(func)
 
@@ -237,6 +251,8 @@ def task(
     max_retries: int = 3,
     retry_backoff: float = 2.0,
     timeout: float | None = None,
+    rate_limit: str | None = None,
+    max_concurrency: int | None = None,
     broker: RedisBroker | None = None,
 ) -> Callable[[Callable[..., Any]], Task]:
     """Decorator to register a function as a TaskManager background task."""
@@ -249,9 +265,12 @@ def task(
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             timeout=timeout,
+            rate_limit=rate_limit,
+            max_concurrency=max_concurrency,
             broker=broker,
         )
         registry.register(t)
         return t
 
     return decorator
+

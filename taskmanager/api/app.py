@@ -275,6 +275,8 @@ def create_app(
                         "max_retries": t.max_retries,
                         "retry_backoff": t.retry_backoff,
                         "timeout": t.timeout,
+                        "rate_limit": t.rate_limit,
+                        "max_concurrency": t.max_concurrency,
                         "is_async": t.is_async,
                         "parameters": sig_info["parameters"],
                         "sample_kwargs": sig_info["sample_kwargs"],

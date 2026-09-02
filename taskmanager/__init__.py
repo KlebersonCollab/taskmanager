@@ -16,11 +16,17 @@ from taskmanager.api.app import create_app
 from taskmanager.config import settings
 from taskmanager.core.broker import RedisBroker
 from taskmanager.core.job import Job
-from taskmanager.core.task import Task, TaskRegistry, registry, task
+from taskmanager.core.limiter import (
+    ConcurrencyLimiter,
+    RateLimitSpec,
+    TokenBucketLimiter,
+    parse_rate_limit,
+)
+from taskmanager.core.task import Task, TaskContext, TaskRegistry, registry, task
 from taskmanager.scheduler.scheduler import Scheduler
 from taskmanager.worker.worker import Worker
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 
 class TaskManager:
@@ -81,6 +87,8 @@ class TaskManager:
         max_retries: int = 3,
         retry_backoff: float = 2.0,
         timeout: float | None = None,
+        rate_limit: str | None = None,
+        max_concurrency: int | None = None,
     ) -> Callable[..., Task]:
         """Decorator to register a function as a Task within this manager's registry."""
 
@@ -92,6 +100,8 @@ class TaskManager:
                 max_retries=max_retries,
                 retry_backoff=retry_backoff,
                 timeout=timeout,
+                rate_limit=rate_limit,
+                max_concurrency=max_concurrency,
                 broker=self.broker,
             )
             self.registry.register(t)
@@ -140,11 +150,16 @@ __all__ = [
     "create_app",
     "Job",
     "Task",
+    "TaskContext",
     "TaskRegistry",
     "registry",
     "Worker",
     "Scheduler",
     "RedisBroker",
+    "RateLimitSpec",
+    "parse_rate_limit",
+    "TokenBucketLimiter",
+    "ConcurrencyLimiter",
     "builtin_tasks",
     "__version__",
 ]

@@ -1,12 +1,13 @@
 # Project State & Context
 
 ## 🏁 Session Status
-- **Current Task**: Completed Feature `ft-07-webhooks-and-alert-channels` (Webhooks & Multi-Platform Alert Channels: Slack, Discord, Microsoft Teams, Telegram, and generic HTTP Webhooks triggered on DLQ failures).
-- **Progress**: 100% of ft-01 through ft-07 tasks verified (37/37 tests passing, ruff clean, zero spec drift).
+- **Current Task**: Completed Feature `ft-08-rate-limiting-and-concurrency-control` (Distributed Token Bucket in Redis and cluster-wide max concurrency semaphore, bumped to v0.3.0).
+- **Progress**: 100% of ft-01 through ft-08 tasks verified (42/42 tests passing, ruff clean, zero spec drift).
 - **Next Steps**:
-  1. Feature 4: Rate Limiting & Concurrency per queue/task (Token Bucket in Redis).
+  - All requested architectural features and polish complete.
 
 ## 💡 Decisions Log
+- **2026-09-01 - Distributed Rate Limiting & Concurrency Control**: Implemented `TokenBucketLimiter` with human-readable syntax (`"10/s"`, `"100/m"`, `"1000/h"`, `"5000/d"`) and `ConcurrencyLimiter` semaphore in Redis. Workers intercept limits and gracefully reschedule jobs into delayed zset without failing jobs or consuming retries. Bumped to v0.3.0.
 - **2026-09-01 - Multi-Platform Webhook & Alert Engine**: Implemented `AlertChannel` with platform-specific payload formatters for Slack (attachments/blocks), Discord (rich embeds), Microsoft Teams (MessageCard/Connector), Telegram (Markdown bot API), and generic HTTP Webhooks with secret bearer authentication. Dispatches alerts asynchronously upon job failure and DLQ routing.
 - **2026-09-01 - Native Observability & Canvas Time-Series**: Implemented zero-external-dependency time-series metrics (`GET /api/metrics/timeseries`) with throughput buckets (completed/failed area curves), latency histogram, P50/P90/P95/P99 percentiles, and per-task breakdown ranking, rendered via pure DPI-scaled HTML5 Canvas adhering to Linear Dark design system.
 - **2026-09-01 - Native Observability & Canvas Time-Series**: Implemented zero-external-dependency time-series metrics (`GET /api/metrics/timeseries`) with throughput buckets (completed/failed area curves), latency histogram, P50/P90/P95/P99 percentiles, and per-task breakdown ranking, rendered via pure DPI-scaled HTML5 Canvas adhering to Linear Dark design system.

@@ -497,14 +497,20 @@ async function fetchTasks() {
 
     const tbody = document.getElementById("tasks-table");
     if (cachedTasks.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--ink-subtle);">Nenhuma tarefa registrada no TaskRegistry.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--ink-subtle);">Nenhuma tarefa registrada no TaskRegistry.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = cachedTasks.map(t => `
+    tbody.innerHTML = cachedTasks.map(t => {
+      const rateBadge = t.rate_limit ? `<span class="badge" style="background: rgba(94,106,210,0.15); color: #818cf8; border: 1px solid rgba(94,106,210,0.3);" title="Taxa Máxima">⚡ ${escapeHtml(t.rate_limit)}</span>` : '';
+      const concBadge = t.max_concurrency ? `<span class="badge" style="background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3);" title="Concorrência Máxima no Cluster">🔒 Max ${t.max_concurrency}</span>` : '';
+      const limitsHtml = (rateBadge || concBadge) ? `<div style="display: flex; gap: 4px; flex-wrap: wrap;">${rateBadge} ${concBadge}</div>` : `<span style="color: var(--ink-tertiary); font-size: 11px;">Sem limites</span>`;
+
+      return `
       <tr>
         <td><strong>${escapeHtml(t.name)}</strong></td>
         <td><code>${escapeHtml(t.queue)}</code></td>
+        <td>${limitsHtml}</td>
         <td>${t.max_retries}</td>
         <td>${t.retry_backoff}s</td>
         <td>${t.timeout ? `${t.timeout}s` : "Sem limite"}</td>
@@ -516,7 +522,8 @@ async function fetchTasks() {
           </div>
         </td>
       </tr>
-    `).join("");
+      `;
+    }).join("");
   } catch (err) {
     console.error("Failed to fetch tasks", err);
   }

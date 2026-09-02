@@ -9,6 +9,7 @@ from typing import Any
 
 from taskmanager.core.broker import RedisBroker
 from taskmanager.core.job import Job
+from taskmanager.core.limiter import ConcurrencyLimiter, TokenBucketLimiter
 from taskmanager.core.task import TaskRegistry, registry
 from taskmanager.worker.heartbeat import HeartbeatManager, WorkerInfo
 
@@ -36,6 +37,8 @@ class Worker:
         self.max_cpu_percent = max_cpu_percent
         self.registry = task_registry or registry
         self.broker = broker or self.registry.get_broker()
+        self.rate_limiter = TokenBucketLimiter(self.broker.redis, prefix=self.broker.prefix)
+        self.concurrency_limiter = ConcurrencyLimiter(self.broker.redis, prefix=self.broker.prefix)
         self.semaphore = asyncio.Semaphore(concurrency)
 
         self.info = WorkerInfo(
@@ -144,12 +147,40 @@ class Worker:
 
     async def _process_job(self, job: Job) -> None:
         """Executes a single job with timeout handling and error catching."""
+        concurrency_acquired = False
+        task_def = None
         try:
             task_def = self.registry.get(job.task_name)
             if not task_def:
                 raise ValueError(
                     f"Task '{job.task_name}' is not registered in Worker task registry."
                 )
+
+            # 1. Check Rate Limit
+            if task_def.rate_limit_spec:
+                allowed, retry_after = await self.rate_limiter.acquire(
+                    task_def.name, task_def.rate_limit_spec
+                )
+                if not allowed:
+                    delay_sec = max(0.1, retry_after)
+                    logger.debug(
+                        f"Task '{task_def.name}' rate limit exceeded. Rescheduling job {job.id} in {delay_sec:.2f}s."
+                    )
+                    await self.broker.schedule_delayed(job, delay_seconds=delay_sec)
+                    return
+
+            # 2. Check Concurrency Limit
+            if task_def.max_concurrency:
+                acquired = await self.concurrency_limiter.acquire(
+                    task_def.name, task_def.max_concurrency, job.id
+                )
+                if not acquired:
+                    logger.debug(
+                        f"Task '{task_def.name}' max concurrency ({task_def.max_concurrency}) reached. Rescheduling job {job.id} in 0.5s."
+                    )
+                    await self.broker.schedule_delayed(job, delay_seconds=0.5)
+                    return
+                concurrency_acquired = True
 
             # Prepare kwargs and inject TaskContext if expected
             call_kwargs = dict(job.kwargs)
@@ -177,7 +208,7 @@ class Worker:
             logger.info(f"Job {job.id} [{job.task_name}] completed successfully.")
 
         except TimeoutError:
-            error_msg = f"Job timed out after {job.timeout or task_def.timeout}s"
+            error_msg = f"Job timed out after {job.timeout or (task_def.timeout if task_def else 'default')}s"
             tb_str = traceback.format_exc()
             logger.error(f"Job {job.id} timed out: {error_msg}")
             await self.broker.mark_failed(job, error=error_msg, traceback_str=tb_str)
@@ -191,6 +222,8 @@ class Worker:
             self.info.failed_jobs_count += 1
 
         finally:
+            if concurrency_acquired and task_def:
+                await self.concurrency_limiter.release(task_def.name, job.id)
             self.info.active_jobs_count = max(0, self.info.active_jobs_count - 1)
             if self.info.active_jobs_count == 0 and not self._paused:
                 self.info.status = "idle"

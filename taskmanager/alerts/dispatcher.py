@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 from typing import Any
@@ -80,18 +81,24 @@ def format_alert_payload(
 
     elif channel.channel_type == ChannelType.TELEGRAM:
         chat_id = channel.telegram_chat_id or ""
+        safe_task = html.escape(str(task_name))
+        safe_queue = html.escape(str(queue))
+        safe_job = html.escape(str(job_id))
+        safe_err = html.escape(str(error))
+        safe_event = html.escape(str(event_type))
+
         text = (
-            f"🚨 *TaskManager Alert*\n\n"
-            f"*Event:* `{event_type}`\n"
-            f"*Task:* `{task_name}`\n"
-            f"*Queue:* `{queue}`\n"
-            f"*Job ID:* `{job_id}`\n"
-            f"*Error:* `{error}`"
+            f"🚨 <b>TaskManager Alert</b>\n\n"
+            f"<b>Evento:</b> <code>{safe_event}</code>\n"
+            f"<b>Tarefa:</b> <code>{safe_task}</code>\n"
+            f"<b>Fila:</b> <code>{safe_queue}</code>\n"
+            f"<b>Job ID:</b> <code>{safe_job}</code>\n"
+            f"<b>Erro:</b> <pre>{safe_err}</pre>"
         )
         return {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
         }
 
     else:
@@ -105,6 +112,19 @@ def format_alert_payload(
         }
 
 
+def resolve_channel_url(channel: AlertChannel) -> str:
+    """Normalizes the target URL, auto-formatting Telegram bot token URLs if needed."""
+    url = (channel.target_url or "").strip()
+    if channel.channel_type == ChannelType.TELEGRAM:
+        if not url.startswith("http://") and not url.startswith("https://"):
+            if url.startswith("bot"):
+                return f"https://api.telegram.org/{url}/sendMessage"
+            return f"https://api.telegram.org/bot{url}/sendMessage"
+        if "api.telegram.org" in url and not url.endswith("/sendMessage"):
+            return f"{url.rstrip('/')}/sendMessage"
+    return url
+
+
 class AlertDispatcher:
     """Asynchronous HTTP dispatcher for delivering alert notifications."""
 
@@ -115,6 +135,7 @@ class AlertDispatcher:
         self, channel: AlertChannel, event_type: str, event_data: dict[str, Any]
     ) -> dict[str, Any]:
         """Dispatches an alert to the channel's target URL in a fail-safe manner."""
+        target_url = resolve_channel_url(channel)
         payload = format_alert_payload(channel, event_type, event_data)
         headers = {"Content-Type": "application/json", "User-Agent": "TaskManager-Alerts/1.0"}
 
@@ -124,11 +145,21 @@ class AlertDispatcher:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                res = await client.post(channel.target_url, json=payload, headers=headers)
+                res = await client.post(target_url, json=payload, headers=headers)
                 success = res.is_success
+                err_detail = None
+
+                if not success:
+                    try:
+                        res_json = res.json()
+                        err_detail = res_json.get("description") or res_json.get("message") or res.text[:300]
+                    except Exception:
+                        err_detail = res.text[:300]
+
                 return {
                     "success": success,
                     "status_code": res.status_code,
+                    "error": f"HTTP {res.status_code}: {err_detail}" if err_detail else None,
                     "response_text": res.text[:500],
                 }
         except Exception as err:
@@ -137,3 +168,4 @@ class AlertDispatcher:
                 "success": False,
                 "error": str(err),
             }
+
